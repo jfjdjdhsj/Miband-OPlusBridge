@@ -578,8 +578,14 @@ public final class OHealthDeviceHook {
         if (info == null || shown == null) return false;
         String mac = shown.getString("mac", "");
         String deviceId = shown.getString("deviceId", "");
-        return io.github.jfjdjdhsj.mibandoplusbridge.data.MacIds.same(mac, String.valueOf(XposedHelpers.callMethod(info, "getMac")))
-                || (!deviceId.isBlank() && deviceId.equals(XposedHelpers.callMethod(info, "getDeviceUniqueId")));
+        // Hooks fire on several device classes; the ones without getMac would otherwise abort the
+        // whole before-hook and LSPosed logs HOOK_BEFORE_FAILED for every call.
+        try {
+            return io.github.jfjdjdhsj.mibandoplusbridge.data.MacIds.same(mac, String.valueOf(XposedHelpers.callMethod(info, "getMac")))
+                    || (!deviceId.isBlank() && deviceId.equals(XposedHelpers.callMethod(info, "getDeviceUniqueId")));
+        } catch (Throwable unsupported) {
+            return false;
+        }
     }
 
     private static void updateInfo(Object info, Bundle shown) {
@@ -1570,6 +1576,12 @@ public final class OHealthDeviceHook {
             String key = text(bean, "getKey");
             if (pkg.isBlank() || key.isBlank()) {
                 notifyDrop("identity pkg=" + !pkg.isBlank() + " key=" + !key.isBlank(), pkg, process);
+                return;
+            }
+            // The local listener never forwards the bridge's own foreground notice; Health's
+            // chain sees it too, so drop it here before the band asks for an icon nobody has.
+            if (io.github.jfjdjdhsj.mibandoplusbridge.BuildConfig.APPLICATION_ID.equals(pkg)) {
+                notifyDrop("self", pkg, process);
                 return;
             }
             if (deliverPhoneAlarm(bean, pkg, key, removed)) return;

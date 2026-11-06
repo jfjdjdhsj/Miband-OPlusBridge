@@ -38,10 +38,6 @@ public final class BandLiveService extends Service {
     private LiveHistorySync historySync;
     private volatile boolean syncRequested;
     private volatile boolean realtimeStatsStopPending;
-    /** Last sign of life from the supervisor. ColorOS freezing the process, or a dead worker
-     *  thread, used to leave the service foreground on 「正在连接手环」 for hours with no retry. */
-    private volatile long supervisorBeatMs;
-    private static final long SUPERVISOR_STALL_MS = 180_000L;
     private long nextBatteryAt;
     private long nextHealthAt;
     private long nextWeatherAt;
@@ -757,7 +753,6 @@ public final class BandLiveService extends Service {
     }
 
     private void supervise() {
-        supervisorBeatMs = android.os.SystemClock.elapsedRealtime();
         try {
             superviseLoop();
         } catch (Throwable fatal) {
@@ -779,7 +774,6 @@ public final class BandLiveService extends Service {
         try {
             try { repository.markSessionClosed(); } catch (RuntimeException ignored) { }
             while (!stopRequested) {
-                supervisorBeatMs = android.os.SystemClock.elapsedRealtime();
                 OwnershipController owner = new OwnershipController(this);
                 if (!repository.isRegistered() || !owner.nativeReady()) {
                     status = "REGISTERED_NATIVE_DEVICE_REQUIRED registered="
@@ -982,7 +976,6 @@ public final class BandLiveService extends Service {
                 if (stopRequested) break;
                 long delay = retryable(status) ? backoff : QUIET_BACKOFF_MS;
                 if (!waitForRetry(delay)) break;
-                supervisorBeatMs = android.os.SystemClock.elapsedRealtime();
                 if (!authenticated.get() && retryable(status)) backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
             }
         } finally {
@@ -1083,18 +1076,6 @@ public final class BandLiveService extends Service {
             return;
         }
         long now = System.nanoTime();
-        long beatAge = android.os.SystemClock.elapsedRealtime() - supervisorBeatMs;
-        if (running.get() && supervisorBeatMs != 0L && beatAge > SUPERVISOR_STALL_MS) {
-            // The coordinator survives a process freeze, so it can put the worker back after the
-            // frozen supervisor thread died. Re-entry is harmless: SppDiagnosticClient admits one
-            // live session at a time and the loser reports CONNECTION_ALREADY_ACTIVE.
-            supervisorBeatMs = android.os.SystemClock.elapsedRealtime();
-            io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this,
-                    "supervise stalled " + (beatAge / 1000) + "s, restarting");
-            try {
-                worker.execute(this::supervise);
-            } catch (java.util.concurrent.RejectedExecutionException stopping) { }
-        }
         if (now >= nextBatteryAt) {
             nextBatteryAt = now + TimeUnit.MINUTES.toNanos(BATTERY_POLL_MINUTES);
             queue.request(nodomain.freeyourgadget.gadgetbridge.proto.xiaomi.XiaomiProto.Command
