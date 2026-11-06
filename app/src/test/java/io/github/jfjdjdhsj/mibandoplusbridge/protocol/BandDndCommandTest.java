@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+package io.github.jfjdjdhsj.mibandoplusbridge.protocol;
+
+import io.github.jfjdjdhsj.mibandoplusbridge.notify.PhoneDnd;
+import nodomain.freeyourgadget.gadgetbridge.proto.xiaomi.XiaomiProto;
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+public final class BandDndCommandTest {
+    @Test public void enabledAndDisabledUseTheWatchStatusCodes() {
+        var on = BandDndCommand.state(true);
+        var off = BandDndCommand.state(false);
+        assertEquals(2, on.getType());
+        assertEquals(23, on.getSubtype());
+        assertEquals(0, on.getSystem().getDndStatus().getStatus());
+        assertEquals(2, off.getSystem().getDndStatus().getStatus());
+    }
+
+    @Test public void syncWithPhoneEnablesTheSwitchAndDoesNotSetStatus() {
+        var command = BandDndCommand.syncWithPhone();
+        assertEquals(2, command.getType());
+        assertEquals(15, command.getSubtype());
+        assertEquals(1, command.getSystem().getMiscSettingSet().getDndSync().getEnabled());
+        assertFalse(command.getSystem().hasDndStatus());
+    }
+
+    @Test public void syncWithPhoneCanCarryTheBandsOwnOffPosition() {
+        var off = BandDndCommand.syncWithPhone(false);
+        assertEquals(2, off.getType());
+        assertEquals(15, off.getSubtype());
+        assertEquals(0, off.getSystem().getMiscSettingSet().getDndSync().getEnabled());
+    }
+
+    @Test public void querySyncAsksForTheDndSwitch() {
+        var command = BandDndCommand.querySync();
+        assertEquals(2, command.getType());
+        assertEquals(14, command.getSubtype());
+        assertEquals(2, command.getSystem().getMiscSettingGet().getSetting());
+        assertFalse(command.getSystem().hasMiscSettingSet());
+    }
+
+    @Test public void syncEnabledReadsOnlyPacketsThatCarryTheSwitch() {
+        assertEquals(Boolean.TRUE, BandDndCommand.syncEnabled(BandDndCommand.syncWithPhone(true)));
+        assertEquals(Boolean.FALSE, BandDndCommand.syncEnabled(BandDndCommand.syncWithPhone(false)));
+        // The band pushes the same body when the user moves the switch; the subtype is not the tell.
+        assertEquals(Boolean.FALSE, BandDndCommand.syncEnabled(
+                BandDndCommand.syncWithPhone(false).toBuilder().setSubtype(14).build()));
+        assertNull(BandDndCommand.syncEnabled(BandDndCommand.querySync()));
+        assertNull(BandDndCommand.syncEnabled(BandDndCommand.state(true)));
+        assertNull(BandDndCommand.syncEnabled(BandDndCommand.phoneRules(true, 1)));
+        assertNull(BandDndCommand.syncEnabled(null));
+    }
+
+    @Test public void phoneRulesCarryTheManualZenRule() {
+        var on = BandDndCommand.phoneRules(true, 1_700_000_000);
+        var off = BandDndCommand.phoneRules(false, 1_700_000_100);
+        assertEquals(2, on.getType());
+        assertEquals(110, on.getSubtype());
+        assertEquals(1, on.getSystem().getPhoneZenRules().getRuleCount());
+        var rule = on.getSystem().getPhoneZenRules().getRule(0);
+        assertTrue(rule.getManual());
+        assertEquals("manual_zen_rule", rule.getName());
+        assertEquals(1, rule.getState());
+        assertEquals(0, rule.getConditionOverride());
+        assertEquals(1_700_000_000, rule.getLastActivation());
+        assertFalse(rule.hasSchedule());
+        assertEquals(0, off.getSystem().getPhoneZenRules().getRule(0).getState());
+    }
+
+    @Test public void manualStateReadsOnlyTheWatchManualRule() {
+        assertEquals(Boolean.TRUE, BandDndCommand.manualState(BandDndCommand.phoneRules(true, 1)));
+        assertEquals(Boolean.FALSE, BandDndCommand.manualState(BandDndCommand.phoneRules(false, 1)));
+        assertNull(BandDndCommand.manualState(BandDndCommand.state(true)));
+        assertNull(BandDndCommand.manualState(null));
+    }
+
+    @Test public void activationTimeIsUnixSecondsNotMillisLowBits() {
+        assertEquals(1_791_184_800, BandDndCommand.activatedAt(1_791_184_800_123L));
+        assertNotEquals((int) 1_791_184_800_123L, BandDndCommand.activatedAt(1_791_184_800_123L));
+    }
+
+    @Test public void storedRuleListIsNotABandToggle() {
+        var stored = XiaomiProto.Command.newBuilder().setType(2).setSubtype(109)
+                .setSystem(XiaomiProto.System.newBuilder().setPhoneZenRules(
+                        XiaomiProto.PhoneZenRuleList.newBuilder().addRule(
+                                XiaomiProto.PhoneZenRule.newBuilder()
+                                        .setManual(true).setName("watch_manual").setState(0))))
+                .build();
+        assertNull(BandDndCommand.pushedManualState(stored));
+        assertEquals(Boolean.FALSE, BandDndCommand.pushedManualState(stored.toBuilder().setSubtype(110).build()));
+        assertEquals(Boolean.TRUE, BandDndCommand.pushedManualState(BandDndCommand.phoneRules(true, 1)));
+        assertNull(BandDndCommand.pushedManualState(null));
+    }
+
+    @Test public void mirrorWithSyncOffOnlyReadsTheSwitchBack() {
+        var packets = BandDndCommand.mirror(PhoneDnd.NONE, false);
+        assertEquals(1, packets.size());
+        assertEquals(14, packets.get(0).getSubtype());
+        assertEquals(2, packets.get(0).getSystem().getMiscSettingGet().getSetting());
+        assertEquals(4, BandDndCommand.mirror(PhoneDnd.NONE, true).size());
+    }
+
+    @Test public void mirrorAlwaysSendsTheSwitchThenTheLiveStatus() {
+        int before = BandDndCommand.activatedAt(System.currentTimeMillis());
+        for (int filter : new int[] {PhoneDnd.NONE, PhoneDnd.ALL, PhoneDnd.UNKNOWN}) {
+            var packets = BandDndCommand.mirror(filter);
+            assertEquals(4, packets.size());
+            var sync = packets.get(0);
+            var state = packets.get(1);
+            var rules = packets.get(2);
+            var silent = packets.get(3);
+            assertEquals(15, sync.getSubtype());
+            assertEquals(1, sync.getSystem().getMiscSettingSet().getDndSync().getEnabled());
+            assertEquals(23, state.getSubtype());
+            boolean on = filter == PhoneDnd.NONE;
+            assertEquals(on ? 0 : 2, state.getSystem().getDndStatus().getStatus());
+            assertEquals(110, rules.getSubtype());
+            var rule = rules.getSystem().getPhoneZenRules().getRule(0);
+            assertEquals("manual_zen_rule", rule.getName());
+            assertEquals(on ? 1 : 0, rule.getState());
+            assertTrue(rule.getManual());
+            assertTrue(rule.getLastActivation() - before >= 0);
+            assertTrue(rule.getLastActivation() - before < 5);
+            assertEquals(1, rules.getSystem().getPhoneZenRules().getRuleCount());
+            assertEquals(44, silent.getSubtype());
+            assertEquals(on, silent.getSystem().getPhoneSilentModeSet().getPhoneSilentMode().getSilent());
+        }
+    }
+ }

@@ -4,15 +4,20 @@ plugins {
 }
 
 android {
-    namespace 'io.github.miam1ku.mibandoplusbridge'
+    namespace 'io.github.jfjdjdhsj.mibandoplusbridge'
     compileSdk 36
     buildToolsVersion '35.0.0'
     defaultConfig {
-        applicationId 'io.github.miam1ku.mibandoplusbridge'
+        applicationId 'io.github.jfjdjdhsj.mibandoplusbridge'
         minSdk 36
         targetSdk 36
-        versionCode 127
-        versionName '1.9.1'
+        // CI passes buildVersionCode/buildVersionName; a plain local build stays at 1 / 0.0.1.
+        def ciVersionCode = (project.findProperty('buildVersionCode')
+                ?: System.getenv('GITHUB_RUN_NUMBER')) as Integer
+        def ciVersionName = project.findProperty('buildVersionName')
+                ?: System.getenv('RELEASE_VERSION_NAME')
+        versionCode ciVersionCode ?: 1
+        versionName ciVersionName ?: '0.0.1'
         // LSPosed auto hot reload only fires when the installed versionCode changes.
         // For a dev loop: ./gradlew :app:assembleDebug -PhotReloadVersionCode=<higher number>
         if (project.hasProperty('hotReloadVersionCode')) {
@@ -29,6 +34,7 @@ android {
         signingConfigs {
             projectKey {
                 storeFile file(keyPath)
+                storeType 'pkcs12'
                 storePassword System.getenv('OPLUSBAND_STORE_PASSWORD')
                 keyAlias System.getenv('OPLUSBAND_KEY_ALIAS')
                 keyPassword System.getenv('OPLUSBAND_KEY_PASSWORD')

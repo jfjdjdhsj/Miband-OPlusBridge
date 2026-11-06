@@ -2,13 +2,15 @@ name: Release
 
 on:
   push:
-    tags:
-      - "[0-9]*-*"
-      - "v*"
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -22,6 +24,8 @@ jobs:
       OPLUSBAND_KEY_PASSWORD: ${{ secrets.OPLUSBAND_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -34,6 +38,23 @@ jobs:
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" --install "platforms;android-36" "build-tools;35.0.0"
+      - name: Compute version
+        id: version
+        run: |
+          set -euo pipefail
+          # Version follows the workflow run number, so every push to main gets a
+          # fresh 0.0.N. A re-run of the same build would collide with an existing
+          # tag, so keep bumping until the tag is free.
+          n=${{ github.run_number }}
+          while git rev-parse -q --verify "refs/tags/v0.0.$n" >/dev/null; do
+            n=$((n + 1))
+          done
+          echo "code=$n" >> "$GITHUB_OUTPUT"
+          echo "name=0.0.$n" >> "$GITHUB_OUTPUT"
+          echo "tag=v0.0.$n" >> "$GITHUB_OUTPUT"
+          prev=$(git describe --tags --abbrev=0 --match 'v0.0.*' 2>/dev/null || true)
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+          echo "Releasing $n / 0.0.$n (previous tag: ${prev:-none})"
       - name: Decode keystore
         run: |
           python3 - <<'PY'
@@ -41,54 +62,58 @@ jobs:
           raw = os.environ.get("KEYSTORE_BASE64", "")
           if not raw.strip():
               sys.exit("OPLUSBAND_KEYSTORE_BASE64 is empty")
-          pathlib.Path(os.environ["RUNNER_TEMP"], "release.jks").write_bytes(base64.b64decode(raw))
+          pathlib.Path(os.environ["RUNNER_TEMP"], "release.p12").write_bytes(base64.b64decode(raw))
           PY
       - name: Test and assemble
         env:
-          OPLUSBAND_KEYSTORE: ${{ runner.temp }}/release.jks
+          OPLUSBAND_KEYSTORE: ${{ runner.temp }}/release.p12
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
-      - name: Release notes from tag
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease \
+            -PbuildVersionCode=${{ steps.version.outputs.code }} \
+            -PbuildVersionName=${{ steps.version.outputs.name }}
+      - name: Release notes
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            git fetch origin tag "$GITHUB_REF_NAME" --force
-            # %(contents) appends the PGP signature. Cut it off before the release page.
-            git tag -l --format='%(contents)' "$GITHUB_REF_NAME" \
-              | awk '/-----BEGIN PGP SIGNATURE-----/{exit} {print}' \
-              > release-notes.md
+          prev='${{ steps.version.outputs.prev }}'
+          if [ -n "$prev" ]; then
+            range="$prev..HEAD"
+          else
+            range="-1 HEAD"
           fi
-          if [[ ! -s release-notes.md ]]; then
-            printf '%s\n' "$GITHUB_REF_NAME" > release-notes.md
-          fi
+          # shellcheck disable=SC2086
+          git log --reverse --pretty=format:'- %s' $range > subjects.txt
+          # shellcheck disable=SC2086
+          git log --reverse --pretty=format:'%b' $range | sed '/^[[:space:]]*$/d' > bodies.txt
+          {
+            echo "## 更新内容"
+            echo
+            cat subjects.txt
+            echo
+            echo
+            if [ -s bodies.txt ]; then
+              echo "## 修复与改动"
+              echo
+              cat bodies.txt
+              echo
+              echo
+            fi
+            echo "**完整变更**：https://github.com/${{ github.repository }}/compare/${prev:-${{ github.sha }}}...${{ steps.version.outputs.tag }}"
+          } > release-notes.md
+          cat release-notes.md
+      - name: Tag the release
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Miband-OPlusBridge ${{ steps.version.outputs.name }}" "${{ github.sha }}"
+          git push origin "${{ steps.version.outputs.tag }}"
       - name: Publish GitHub Release
-        id: source_release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: release-notes.md
-          files: app/build/outputs/apk/release/app-release.apk
-      - name: Read source release notes
-        id: notes
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release view "$GITHUB_REF_NAME" --json name --jq .name > release-name.txt
-          gh release view "$GITHUB_REF_NAME" --json body --jq .body > release-notes.md
-          echo "name=$(cat release-name.txt)" >> "$GITHUB_OUTPUT"
-      - name: Publish Xposed-Modules-Repo release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: Xposed-Modules-Repo/io.github.miam1ku.mibandoplusbridge
-          token: ${{ secrets.XPOSED_REPO_PAT }}
-          tag_name: ${{ github.ref_name }}
-          target_commitish: main
-          name: ${{ steps.notes.outputs.name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Miband-OPlusBridge ${{ steps.version.outputs.name }}
           body_path: release-notes.md
           files: app/build/outputs/apk/release/app-release.apk
           fail_on_unmatched_files: true
-          overwrite_files: true
           make_latest: true

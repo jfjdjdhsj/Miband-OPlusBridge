@@ -1,0 +1,434 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+package io.github.jfjdjdhsj.mibandoplusbridge.service;
+
+import android.content.Context;
+import android.database.ContentObserver;
+import android.os.Bundle;
+import io.github.jfjdjdhsj.mibandoplusbridge.integration.WeatherSnapshotProvider;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog;
+import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandWeatherEncoder;
+import io.github.jfjdjdhsj.mibandoplusbridge.protocol.LiveCommandQueue;
+import nodomain.freeyourgadget.gadgetbridge.proto.xiaomi.XiaomiProto;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+import org.json.JSONObject;
+
+/** Weather transactions run on the service's single-thread coordinator. The live session owns the socket. */
+public final class WeatherSync implements AutoCloseable {
+    public static final class Failure extends IllegalStateException {
+        public final String code;
+        public Failure(String code) { super(code); this.code = code; }
+    }
+
+    private enum Operation { REFRESH, IF_CHANGED, INSPECT, SEND }
+    private final Context context;
+    private final Supplier<LiveCommandQueue> queue;
+    private final ScheduledExecutorService coordinator;
+    private final ContentObserver observer = new ContentObserver(null) {
+        @Override public void onChange(boolean selfChange) {
+            dispatch(() -> { if (waitingSnapshot) readRefreshResult(); });
+        }
+    };
+    private volatile boolean closed;
+    private volatile boolean awaitingCities;
+    /** History sync owns the radio until {@link #releaseForecast(int)} for this epoch. */
+    private volatile boolean deferForecast;
+    private int forecastEpoch;
+    private boolean observing;
+    private boolean waitingSnapshot;
+    private CompletableFuture<Void> active;
+    private Operation operation;
+    private ScheduledFuture<?> expiry;
+    private LiveCommandQueue transactionQueue;
+    private BandWeatherEncoder.Sample lastSent;
+
+    public WeatherSync(Context context, Supplier<LiveCommandQueue> queue,
+                       ScheduledExecutorService coordinator) {
+        this.context = context.getApplicationContext();
+        this.queue = queue;
+        this.coordinator = coordinator;
+        dispatch(() -> {
+            if (closed) return;
+            try {
+                this.context.getContentResolver().registerContentObserver(
+                        WeatherSnapshotProvider.UPDATED, false, observer);
+                observing = true;
+            } catch (RuntimeException unavailable) {
+                record("WEATHER_SOURCE_UNAVAILABLE");
+            }
+        });
+    }
+
+    public CompletionStage<Void> refreshAndSend() {
+        if (deferForecast) return CompletableFuture.completedFuture(null);
+        return submit(Operation.REFRESH, null);
+    }
+
+    /**
+     * The connect burst also lists and pulls activity files. This firmware drops the GATT
+     * link when a weather forecast (10/0) is written while that transfer is still open,
+     * and the service then reconnects three seconds later. Hold forecasts off the radio
+     * until the history round finishes. Returns the epoch {@link #releaseForecast(int)} must pass.
+     */
+    public synchronized int deferForecast() {
+        deferForecast = true;
+        return ++forecastEpoch;
+    }
+
+    /** One forecast after the matching history round. A stale epoch is a session that already ended. */
+    public synchronized void releaseForecast(int epoch) {
+        if (!deferForecast || epoch != forecastEpoch) return;
+        deferForecast = false;
+        refreshAndSend();
+    }
+    /** Idle poll. The watch's own weather request still uses {@link #refreshAndSend()}. */
+    public CompletionStage<Void> sendIfChanged() { return submit(Operation.IF_CHANGED, null); }
+    public CompletionStage<Void> inspectCities(BandWeatherEncoder.Sample sample) {
+        return submit(Operation.INSPECT, sample);
+    }
+    public CompletionStage<Void> send(BandWeatherEncoder.Sample sample) { return submit(Operation.SEND, sample); }
+
+    private CompletionStage<Void> submit(Operation requested, BandWeatherEncoder.Sample sample) {
+        CompletableFuture<Void> result = new CompletableFuture<>();
+        try {
+            coordinator.execute(() -> {
+                if (closed) { result.completeExceptionally(new Failure("WEATHER_CLOSED")); return; }
+                if (deferForecast) { result.complete(null); return; }
+                if (active != null) {
+                    if (operation == requested) relay(active, result);
+                    else result.completeExceptionally(new Failure("WEATHER_BUSY"));
+                    return;
+                }
+                active = result;
+                operation = requested;
+                transactionQueue = queue.get();
+                if (transactionQueue == null) { finish("WEATHER_DISCONNECTED"); return; }
+                try {
+                    if (requested == Operation.REFRESH || requested == Operation.IF_CHANGED) {
+                        Bundle response;
+                        try {
+                            response = context.getContentResolver().call(WeatherSnapshotProvider.URI,
+                                    "requestRefresh", null, null);
+                        } catch (RuntimeException unavailable) {
+                            response = null;
+                        }
+                        if (response == null || !"WEATHER_REQUESTED".equals(response.getString("status"))) {
+                            // A source failure leaves a previously fresh snapshot in place.
+                            deliver(freshSnapshot(null));
+                            return;
+                        }
+                        waitingSnapshot = true;
+                        readRefreshResult();
+                    } else queryCities(freshSnapshot(sample));
+                } catch (Exception failure) { finish(code(failure)); }
+            });
+        } catch (RejectedExecutionException stopped) {
+            result.completeExceptionally(new Failure("WEATHER_CLOSED"));
+        }
+        return result;
+    }
+
+    private static void relay(CompletionStage<Void> source, CompletableFuture<Void> target) {
+        source.whenComplete((ignored, error) -> {
+            if (error == null) target.complete(null); else target.completeExceptionally(error);
+        });
+    }
+
+    private Bundle snapshot() {
+        Bundle response = context.getContentResolver().call(WeatherSnapshotProvider.URI, "getSnapshot", null, null);
+        if (response == null) throw new Failure("WEATHER_SOURCE_UNAVAILABLE");
+        return response;
+    }
+
+    /** Pending or failed refreshes preserve usable older data and its original timestamps. */
+    public static BandWeatherEncoder.Sample freshSample(Bundle response) throws Exception {
+        if (response == null) throw new Failure("WEATHER_SOURCE_UNAVAILABLE");
+        long now = System.currentTimeMillis();
+        long updated = response.getLong("updatedAtMs", 0);
+        if (updated <= 0 || updated > now || now - updated > 3_600_000L) {
+            throw new Failure("WEATHER_SOURCE_STALE");
+        }
+        BandWeatherEncoder.Sample sample = BandWeatherEncoder.parse(new JSONObject(response.getString("snapshot", "")));
+        if (sample.publishedAtMs() > now + 3_600_000L
+                || now - sample.publishedAtMs() > 6 * 3_600_000L) throw new Failure("WEATHER_FORECAST_STALE");
+        BandWeatherEncoder.validateForecast(sample);
+        return sample;
+    }
+
+    private BandWeatherEncoder.Sample freshSnapshot(BandWeatherEncoder.Sample displayed) throws Exception {
+        Bundle response = snapshot();
+        BandWeatherEncoder.Sample sample = freshSample(response);
+        if (displayed != null && (!sample.locationKey().equals(displayed.locationKey())
+                || !sample.cityName().equals(displayed.cityName())
+                || !sample.locationName().equals(displayed.locationName()))) throw new Failure("WEATHER_PREVIEW_CHANGED");
+        return sample;
+    }
+
+    private void readRefreshResult() {
+        if (!waitingSnapshot || active == null) return;
+        try {
+            Bundle response = snapshot();
+            if (response.getBoolean("pending", false)) {
+                if (expiry == null) expiry = coordinator.schedule(() -> {
+                    expiry = null;
+                    readRefreshResult();
+                }, Math.max(1, response.getLong("remainingMs", 90_000L)), TimeUnit.MILLISECONDS);
+                return;
+            }
+            waitingSnapshot = false;
+            cancelExpiry();
+            deliver(freshSample(response));
+        } catch (Exception failure) { finish(code(failure)); }
+    }
+
+    private void deliver(BandWeatherEncoder.Sample sample) {
+        if (operation == Operation.IF_CHANGED && !transmitForecast(false, lastSent, sample)) {
+            skipUnchanged();
+            return;
+        }
+        queryCities(sample);
+    }
+
+    /**
+     * Status 1: this band has no city list. Status 2: weather was never primed, so the list
+     * is empty. Either way the phone city is added and the forecast still goes out.
+     */
+    static boolean unsupportedCityList(XiaomiProto.Command command) {
+        return command != null && command.getType() == 10 && command.getSubtype() == 5
+                && command.hasStatus() && (command.getStatus() == 1 || command.getStatus() == 2);
+    }
+
+    /** A watch request always transmits. An idle poll keeps the same forecast off the radio. */
+    static boolean transmitForecast(boolean forced, BandWeatherEncoder.Sample lastSent,
+                                    BandWeatherEncoder.Sample current) {
+        return forced || lastSent == null || current == null || !lastSent.equals(current);
+    }
+
+    private void queryCities(BandWeatherEncoder.Sample sample) {
+        CompletableFuture<Void> transaction = active;
+        awaitingCities = true;
+        record("WEATHER_READING_CITIES");
+        transactionQueue.request(XiaomiProto.Command.newBuilder().setType(10).setSubtype(5).build(), 10, 5)
+                .whenComplete((response, failure) -> dispatch(() -> {
+                    if (active != transaction) return;
+                    awaitingCities = false;
+                    if (failure != null) { finish("WEATHER_TRANSPORT_FAILED"); return; }
+                    if (response.hasStatus() && response.getStatus() != 0 && !unsupportedCityList(response)) {
+                        finish("WEATHER_BAND_REJECTED");
+                        return;
+                    }
+                    if (!unsupportedCityList(response)
+                            && (!response.hasWeather() || !response.getWeather().hasLocations())) {
+                        finish("WEATHER_CITY_LIST_INVALID"); return;
+                    }
+                    try {
+                        BandWeatherEncoder.Sample fresh = freshSnapshot(sample);
+                        if (unsupportedCityList(response)) {
+                            SessionLog.line(context, "WEATHER_CITIES unsupported");
+                            if (operation == Operation.INSPECT) { finish(null); return; }
+                            sendCurrentCity(transaction, fresh);
+                            return;
+                        }
+                        XiaomiProto.WeatherLocations cities = response.getWeather().getLocations();
+                        SessionLog.line(context, "WEATHER_CITIES raw=" + cities.getLocationCount()
+                                + " accepted=" + BandWeatherEncoder.acceptedCityCount(cities));
+                        saveReview(fresh, cities);
+                        if (operation == Operation.INSPECT) { finish(null); return; }
+                        publish(transaction, fresh, cities);
+                    } catch (Exception invalid) { finish(code(invalid)); }
+                }));
+    }
+
+    private void saveReview(BandWeatherEncoder.Sample sample, XiaomiProto.WeatherLocations cities) {
+        var prefs = context.getSharedPreferences("weather-city-review", 0);
+        var edit = prefs.edit().putString("sourceKey", sample.locationKey())
+                .putString("sourceCity", sample.cityName()).putString("sourcePlace", sample.locationName());
+        int count = 0;
+        for (var city : cities.getLocationList()) {
+            if (!BandWeatherEncoder.acceptableCityCode(city.getCode()) || !city.hasName()
+                    || city.getName().isBlank() || city.getName().length() > 80) continue;
+            edit.putString("bandCode" + count, city.getCode()).putString("bandName" + count, city.getName());
+            count++;
+        }
+        for (int i = count; i < prefs.getInt("bandCount", 0); i++) edit.remove("bandCode" + i).remove("bandName" + i);
+        if (!edit.putInt("bandCount", count).commit()) throw new Failure("WEATHER_CITY_STORAGE_FAILED");
+
+    }
+    /** 10/5 status 1 or 2 has no list to edit. 10/7 writes this one city; 1 and 3 still allow the forecast. */
+    private void sendCurrentCity(CompletableFuture<Void> transaction, BandWeatherEncoder.Sample fresh) {
+        writeCity(transaction, fresh, BandWeatherEncoder.addCurrentLocation(fresh));
+    }
+
+    private void publish(CompletableFuture<Void> transaction, BandWeatherEncoder.Sample fresh,
+                         XiaomiProto.WeatherLocations cities) {
+        var review = context.getSharedPreferences("weather-city-review", 0);
+        BandWeatherEncoder.CityUpdate plan;
+        try {
+            plan = BandWeatherEncoder.planTakeover(fresh, cities, review.getString("currentLocationKey", ""));
+        } catch (IllegalArgumentException invalid) {
+            finish(code(invalid));
+            return;
+        }
+        if (plan.remove() == null) {
+            writeCity(transaction, fresh, plan.write());
+            return;
+        }
+        SessionLog.line(context, "WEATHER_REMOVE_CITY");
+        transactionQueue.request(plan.remove(), 10, 8).whenComplete((removed, failure) -> dispatch(() -> {
+            if (active != transaction) return;
+            if (failure != null) { finish("WEATHER_TRANSPORT_FAILED"); return; }
+            int status = removed != null && removed.hasStatus() ? removed.getStatus() : 0;
+            // 1: this band has no remove command. The add below still installs the phone city.
+            if (status != 0 && status != 1) { finish("WEATHER_BAND_REJECTED"); return; }
+            if (status != 0) SessionLog.line(context, "WEATHER_REMOVE_CITY status=" + status);
+            writeCity(transaction, fresh, plan.write());
+        }));
+    }
+
+    private void writeCity(CompletableFuture<Void> transaction, BandWeatherEncoder.Sample fresh,
+                           XiaomiProto.Command write) {
+        if (write == null) {
+            sendFrame(transaction, fresh, BandWeatherEncoder.encode(fresh), 0);
+            return;
+        }
+        SessionLog.line(context, "WEATHER_SET_CURRENT_CITY");
+        int subtype = write.getSubtype();
+        transactionQueue.request(write, 10, subtype).whenComplete((set, setFailure) -> dispatch(() -> {
+            if (active != transaction) return;
+            if (setFailure != null) { finish("WEATHER_TRANSPORT_FAILED"); return; }
+            int status = set != null && set.hasStatus() ? set.getStatus() : 0;
+            boolean added = subtype == 7 && (status == 1 || status == 3);
+            if (status != 0 && !added) { finish("WEATHER_BAND_REJECTED"); return; }
+            if (status != 0) SessionLog.line(context, "WEATHER_CURRENT_CITY status=" + status);
+            sendFrame(transaction, fresh, BandWeatherEncoder.encode(fresh), 0);
+        }));
+    }
+
+    private void sendFrame(CompletableFuture<Void> transaction, BandWeatherEncoder.Sample sample,
+                           List<XiaomiProto.Command> frames, int index) {
+        if (active != transaction) return;
+        if (index == frames.size()) {
+            lastSent = sample;
+            rememberCurrent(sample);
+            finish(null);
+            return;
+        }
+        try {
+            freshSnapshot(sample);
+            if (transactionQueue != queue.get()) throw new Failure("WEATHER_DISCONNECTED");
+            transactionQueue.send(frames.get(index)).whenComplete((ignored, failure) -> dispatch(() -> {
+                if (active != transaction) return;
+                if (failure != null) finish("WEATHER_TRANSPORT_FAILED");
+                else sendFrame(transaction, sample, frames, index + 1);
+            }));
+        } catch (Exception failure) { finish(code(failure)); }
+    }
+
+    /** Called before queue.onCommand by the sole socket reader; only schedules work. */
+    public void onCommand(XiaomiProto.Command command) {
+        if (closed || command.getType() != 10) return;
+        boolean ownCityResponse = command.getSubtype() == 5 && awaitingCities;
+        dispatch(() -> {
+            if (closed) return;
+            if (command.hasStatus() && command.getStatus() != 0) {
+                // 10/5 status 1 or 2: no city list. The request handler adds the phone city.
+                // 10/7: 1 means this device has no single-city add; 3 means the city is already there.
+                // 10/8 status 1: remove is unsupported. The following add still runs.
+                if (unsupportedCityList(command) && awaitingCities) return;
+                if (command.getSubtype() == 7 && (command.getStatus() == 1 || command.getStatus() == 3)) return;
+                if (command.getSubtype() == 8 && command.getStatus() == 1) return;
+                if (active != null) finish("WEATHER_BAND_REJECTED");
+                else record("WEATHER_BAND_REJECTED");
+                return;
+            }
+            if (command.getSubtype() == 5 && !ownCityResponse) refreshAndSend();
+            else if (command.getSubtype() == 3 && command.hasWeather() && command.getWeather().hasLocation()) {
+                var review = context.getSharedPreferences("weather-city-review", 0);
+                String current = review.getString("currentLocationKey", "");
+                String confirmed = review.getString("confirmedBandCode", "");
+                String code = command.getWeather().getLocation().getCode();
+                if (code.isEmpty() || current.isEmpty() || code.equals(current)
+                        || (!confirmed.isEmpty() && code.equals(confirmed))) refreshAndSend();
+            }
+        });
+    }
+
+    public void onDisconnected() {
+        synchronized (this) {
+            forecastEpoch++;
+            deferForecast = false;
+        }
+        dispatch(() -> finish("WEATHER_DISCONNECTED"));
+    }
+
+    @Override public void close() {
+        closed = true;
+        dispatch(() -> {
+            finish("WEATHER_CLOSED");
+            if (observing) {
+                context.getContentResolver().unregisterContentObserver(observer);
+                observing = false;
+            }
+        });
+    }
+
+    private void rememberCurrent(BandWeatherEncoder.Sample sample) {
+        context.getSharedPreferences("weather-city-review", 0).edit()
+                .putString("currentLocationKey", sample.locationKey())
+                .putString("currentLocationName", sample.locationName())
+                .apply();
+    }
+
+    private void cancelExpiry() { if (expiry != null) { expiry.cancel(false); expiry = null; } }
+
+    private void skipUnchanged() {
+        if (active == null) return;
+        CompletableFuture<Void> result = active;
+        active = null;
+        awaitingCities = false;
+        waitingSnapshot = false;
+        transactionQueue = null;
+        cancelExpiry();
+        record("WEATHER_UNCHANGED");
+        result.complete(null);
+    }
+
+    private void finish(String error) {
+        if (active == null) return;
+        CompletableFuture<Void> result = active;
+        Operation completed = operation;
+        active = null;
+        awaitingCities = false;
+        waitingSnapshot = false;
+        transactionQueue = null;
+        cancelExpiry();
+        record(error == null ? completed == Operation.INSPECT ? "WEATHER_CITIES_READY" : "WEATHER_TRANSPORT_CONFIRMED" : error);
+        if (error == null) result.complete(null); else result.completeExceptionally(new Failure(error));
+    }
+    private void record(String status) {
+        try {
+            var edit = context.getSharedPreferences("weather-sync", 0).edit().putString("status", status);
+            if ("WEATHER_TRANSPORT_CONFIRMED".equals(status)) edit.putLong("confirmedAtMs", System.currentTimeMillis());
+            edit.apply();
+            context.getContentResolver().notifyChange(WeatherSnapshotProvider.UPDATED, null);
+        } catch (RuntimeException unavailable) {
+            // Status persistence cannot strand a completed transport future.
+        }
+    }
+
+    private static String code(Exception error) {
+        if (error instanceof Failure failure) return failure.code;
+        String message = error.getMessage();
+        return message != null && message.startsWith("WEATHER_") ? message : "WEATHER_DATA_INVALID";
+    }
+
+    private void dispatch(Runnable work) {
+        try { coordinator.execute(work); } catch (RejectedExecutionException stopped) { /* Service has stopped. */ }
+    }
+}

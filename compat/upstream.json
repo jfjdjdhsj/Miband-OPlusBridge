@@ -87,23 +87,23 @@
   "runtimeReuseFiles": [
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV2.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/SppV2Codec.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/SppV2Codec.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppProtocolV2.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/SppNegotiation.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/SppNegotiation.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV1.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/SppNegotiation.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/SppNegotiation.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppSupport.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/SppNegotiation.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/SppNegotiation.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiAuthService.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/XiaomiSessionCrypto.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/XiaomiSessionCrypto.java"
     },
     {
       "source": "GBProtobufGenerator/src/main/proto/xiaomi.proto",
@@ -111,31 +111,31 @@
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/services/XiaomiWeatherService.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/BandWeatherEncoder.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/BandWeatherEncoder.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/devices/xiaomi/XiaomiWeatherConditions.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/WeatherConditionMap.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/WeatherConditionMap.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/services/XiaomiSystemService.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/BandClockCommand.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/BandClockCommand.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/services/XiaomiNotificationService.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/BandNotificationCommand.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/BandNotificationCommand.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiCharacteristicV1.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/BleV1Codec.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/BleV1Codec.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV1.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/SppV1Codec.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/SppV1Codec.java"
     },
     {
       "source": "app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppProtocolV1.java",
-      "target": "app/src/main/java/io/github/miam1ku/mibandoplusbridge/protocol/SppV1Codec.java"
+      "target": "app/src/main/java/io/github/jfjdjdhsj/mibandoplusbridge/protocol/SppV1Codec.java"
     }
   ],
   "selectionStatus": "SPP_V2_OBSERVED; INDEPENDENT_AUTHENTICATION_PENDING"

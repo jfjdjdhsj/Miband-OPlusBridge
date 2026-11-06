@@ -4,12 +4,12 @@
 
 把小米运动健康能用 **SPP** 连上的手环接到 ColorOS **设备空间** 和 **OPPO 健康**。
 
-在设备空间里管理这只手环，查看连接与电量，并把步数、心率、静息心率、步行平均心率、睡眠写入 OPPO 健康。静息心率取自手环每天的日报；步行平均心率按当天走路分钟的步数和心率推算，所以两者都按天各一条，和 OPPO 手表自己的口径一致。手机通知和来电转到手环，当前播放走 OPPO 健康自己的音乐控制。首页可打开「入睡后暂停音乐」：手环报入睡后暂停手机播放，醒来后保持暂停。通过睡眠记录报告入睡的手环，会在记录同步后暂停。手环查找手机会走 OPPO 健康自己的响铃，健康设备页也可以让这只手环响。健康首页若在导入完成前就打开，导入结束后会再读一次。日常在设备空间和 OPPO 健康里使用。小米手环 11 已实机验证。手环 8 / 8 Pro / 9 / 9 Pro / 10 / 10 Pro 及 NFC、活力版，官方重连是 SPP 或 GATT + WearAuthV2 即可导入接管。SPP V2、SPP V1（8 Pro）和纯 BLE（fe95）在连接时按采集 profile 分支。纯 BLE 用已导入的密钥重连，系统蓝牙配对断开后照样能连；SPP 连接依赖系统蓝牙配对。
+在设备空间里管理这只手环，查看连接与电量，并把步数、心率、静息心率、步行平均心率、睡眠写入 OPPO 健康。静息心率取自手环每天的日报；步行平均心率按当天走路分钟的步数和心率推算，所以两者都按天各一条，和 OPPO 手表自己的口径一致。手机通知和来电转到手环，当前播放走 OPPO 健康自己的音乐控制。首页可打开「入睡后暂停音乐」：手环报入睡后暂停手机播放，醒来后保持暂停。通过睡眠记录报告入睡的手环，会在记录同步后暂停。手环查找手机会走 OPPO 健康自己的响铃，健康设备页也可以让这只手环响。健康首页若在导入完成前就打开，导入结束后会再读一次。日常在设备空间和 OPPO 健康里使用。小米手环 11 已实机验证。手环 8 / 8 Pro / 9 / 9 Pro / 10 / 10 Pro 及 NFC、活力版，官方重连是 SPP 或 GATT + WearAuthV2 即可导入接管。红米手表 5（含无 eSIM 版，型号 `miwear.watch.o65`）按 SPP V2 接管。SPP V2、SPP V1（8 Pro）和纯 BLE（fe95）在连接时按采集 profile 分支。纯 BLE 用已导入的密钥重连，系统蓝牙配对断开后照样能连；SPP 连接依赖系统蓝牙配对。
 
 接管期间连接留在前台服务里重连。健康还在、服务被系统杀掉时，健康读卡片或转发通知会把服务拉起来。控制中心可以添加「手环」，下拉或点一下会拉起连接。后台限制拦住时用 root 启动。服务这边先把健康进程绑回来，绑定中断时改用 root 拉起健康。连接还在建立时，通知先留着，连上后续发；普通通知保留 60 秒，来电保留 15 秒。健康在后台拉起的是连接服务。通知保持一条折叠的「手环已连接」。
 
 
-包名：`io.github.miam1ku.mibandoplusbridge`
+包名：`io.github.jfjdjdhsj.mibandoplusbridge`
 
 点击链接加入群聊【Miband-OPlusBridge】：https://qm.qq.com/q/eEk3EsgSH0
 
@@ -65,17 +65,18 @@
 
 ## 发布
 
-打 tag 后 GitHub Actions 会构建，并把同一个 `app-release.apk` 发到两个仓库：
+推送 `main` 即自动发版：GitHub Actions 跑单测、构建签名 APK、打 tag 并发布 Release，不用手动打 tag。
 
 ```
-git tag 32-1.2.9
-git push origin 32-1.2.9
+git push origin main
 ```
 
-- 源仓库：https://github.com/MiaM1ku/Miband-OPlusBridge
-- LSPosed 仓库：https://github.com/Xposed-Modules-Repo/io.github.miam1ku.mibandoplusbridge
+- 版本号由工作流运行号决定：第 N 次运行产出 `versionName 0.0.N` / `versionCode N`，tag 为 `v0.0.N`。
+- Release 说明自动汇总上一个 `v0.0.*` tag 以来的提交标题；提交正文写进「修复与改动」。
+- `workflow_dispatch` 手动触发走同一套流程。
+- 本地构建不注入版本时固定为 `versionCode 1` / `versionName 0.0.1`。
 
-tag 格式：`{versionCode}-{versionName}`。`workflow_dispatch` 只更新源仓库。
+仓库：https://github.com/jfjdjdhsj/Miband-OPlusBridge
 
 仓库 Secrets：
 
@@ -83,7 +84,6 @@ tag 格式：`{versionCode}-{versionName}`。`workflow_dispatch` 只更新源仓
 - `OPLUSBAND_STORE_PASSWORD`
 - `OPLUSBAND_KEY_ALIAS`
 - `OPLUSBAND_KEY_PASSWORD`
-- `XPOSED_REPO_PAT`：对 `Xposed-Modules-Repo/io.github.miam1ku.mibandoplusbridge` 有 Contents 写权限的 PAT。`GITHUB_TOKEN` 只管本仓库。配好这个 secret，tag 发布才会继续镜像到 LSPosed 仓库；源 Release 照常先完成。
 
 ## 鸣谢
 

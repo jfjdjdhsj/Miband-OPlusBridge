@@ -1,10 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <permission android:name="io.github.miam1ku.mibandoplusbridge.permission.FIND_PHONE"
+    <permission android:name="io.github.jfjdjdhsj.mibandoplusbridge.permission.FIND_PHONE"
         android:protectionLevel="signature" />
-    <uses-permission android:name="io.github.miam1ku.mibandoplusbridge.permission.FIND_PHONE" />
-    <permission android:name="io.github.miam1ku.mibandoplusbridge.permission.SET_DND"
+    <uses-permission android:name="io.github.jfjdjdhsj.mibandoplusbridge.permission.FIND_PHONE" />
+    <permission android:name="io.github.jfjdjdhsj.mibandoplusbridge.permission.SET_DND"
         android:protectionLevel="signature" />
-    <uses-permission android:name="io.github.miam1ku.mibandoplusbridge.permission.SET_DND" />
+    <uses-permission android:name="io.github.jfjdjdhsj.mibandoplusbridge.permission.SET_DND" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
@@ -86,7 +86,7 @@
             </intent-filter>
         </receiver>
         <provider android:name=".integration.DeviceCardProvider"
-            android:authorities="io.github.miam1ku.mibandoplusbridge.devices"
+            android:authorities="io.github.jfjdjdhsj.mibandoplusbridge.devices"
             android:exported="true" android:grantUriPermissions="false">
             <intent-filter>
                 <action android:name="oplus.devicecards.action.DEVICE_INFO" />
@@ -94,25 +94,25 @@
             <meta-data android:name="oplus.devicecards.provider" android:resource="@xml/device_center" />
         </provider>
         <provider android:name=".integration.WeatherSnapshotProvider"
-            android:authorities="io.github.miam1ku.mibandoplusbridge.weather"
+            android:authorities="io.github.jfjdjdhsj.mibandoplusbridge.weather"
             android:exported="true" android:grantUriPermissions="true" />
         <provider android:name=".integration.HealthQueueProvider"
-            android:authorities="io.github.miam1ku.mibandoplusbridge.health"
+            android:authorities="io.github.jfjdjdhsj.mibandoplusbridge.health"
             android:exported="true" android:directBootAware="false"
             android:grantUriPermissions="false" />
         <provider android:name=".integration.CredentialProvider"
-            android:authorities="io.github.miam1ku.mibandoplusbridge.credentials"
+            android:authorities="io.github.jfjdjdhsj.mibandoplusbridge.credentials"
             android:exported="true" android:directBootAware="false"
             android:grantUriPermissions="false" />
         <provider android:name=".integration.HostNotifyProvider"
-            android:authorities="io.github.miam1ku.mibandoplusbridge.notify"
+            android:authorities="io.github.jfjdjdhsj.mibandoplusbridge.notify"
             android:exported="true" android:directBootAware="false"
             android:grantUriPermissions="false" />
         <provider android:name=".integration.PhoneAlarmProvider"
-            android:authorities="io.github.miam1ku.mibandoplusbridge.phone-alarm"
+            android:authorities="io.github.jfjdjdhsj.mibandoplusbridge.phone-alarm"
             android:exported="true" android:grantUriPermissions="false" />
         <provider android:name="androidx.core.content.FileProvider"
-            android:authorities="io.github.miam1ku.mibandoplusbridge.debuglog"
+            android:authorities="io.github.jfjdjdhsj.mibandoplusbridge.debuglog"
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/debug_log_paths" />
