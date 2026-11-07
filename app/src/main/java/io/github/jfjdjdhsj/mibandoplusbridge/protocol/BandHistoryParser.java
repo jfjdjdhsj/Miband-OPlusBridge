@@ -649,6 +649,21 @@ public final class BandHistoryParser {
         return sleepStage(startMs, endMs, stage, timezone);
     }
 
+    /**
+     * One minute of sleep breath rate. The host stores tenths of a breath per minute, the same
+     * unit the band's own breath packet decodes to: 14.2 breaths becomes 142.
+     */
+    public Measurement importedSleepBreath(long startMs, int tenths, String timezone) {
+        if (tenths < 60 || tenths > 500) throw new IllegalArgumentException("UNSUPPORTED_SLEEP_BREATH");
+        return measurement("sleep_breath", startMs, startMs + MINUTE_MS, tenths, timezone, "sleep", false);
+    }
+
+    /** One sleep heart-rate point. Health types it 5, which its sleep page reads as a sleep sample. */
+    public Measurement importedSleepHeart(long atMs, int bpm, String timezone) {
+        if (bpm < 40 || bpm > 220) throw new IllegalArgumentException("UNSUPPORTED_SLEEP_HEART");
+        return measurement("heart_rate", atMs, atMs + 1, bpm, timezone, "sleep", false);
+    }
+
     /** True when every measurement from {@code index} on is a daily heart value, never a sample. */
     public static boolean onlyDailyHeartFrom(List<Measurement> measurements, int index) {
         if (measurements == null) return false;

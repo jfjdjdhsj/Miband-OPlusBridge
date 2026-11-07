@@ -28,8 +28,17 @@ public final class MiFitnessSleep {
     /** Stage numbers match a band sleep file: 2 deep, 3 light, 4 REM, 5 awake. */
     public record Stage(long startMs, long endMs, int state) {}
 
+    /**
+     * {@code avgBreath} is breaths per minute, as Mi Fitness shows it. {@code minHr}, {@code maxHr}
+     * and {@code avgHr} are the session's own sleep heart-rate range. Any of them is null when the
+     * vendor row did not carry a usable value.
+     */
     public record Session(long startMs, long endMs, String timezone, boolean complete,
-            List<Stage> stages) {}
+            List<Stage> stages, Integer avgBreath, Integer minHr, Integer maxHr, Integer avgHr) {
+        public Session(long startMs, long endMs, String timezone, boolean complete, List<Stage> stages) {
+            this(startMs, endMs, timezone, complete, stages, null, null, null, null);
+        }
+    }
 
     private MiFitnessSleep() {}
 
@@ -118,10 +127,23 @@ public final class MiFitnessSleep {
                 }
             }
             stages.sort(java.util.Comparator.comparingLong(Stage::startMs));
-            return new Session(start, end, zone, !value.optBoolean("is_uncomplete", false), List.copyOf(stages));
+            return new Session(start, end, zone, !value.optBoolean("is_uncomplete", false), List.copyOf(stages),
+                    breath(value), heart(value, "min_hr", 40, 220), heart(value, "max_hr", 40, 220),
+                    heart(value, "avg_hr", 40, 220));
         } catch (org.json.JSONException malformed) {
             return null;
         }
+    }
+
+    /** Breaths per minute. Mi Fitness drops the field on sessions without a breath measurement. */
+    private static Integer breath(JSONObject value) {
+        int rate = value.optInt("avg_breath", 0);
+        return rate >= 6 && rate <= 50 ? Integer.valueOf(rate) : null;
+    }
+
+    private static Integer heart(JSONObject value, String name, int low, int high) {
+        int bpm = value.optInt(name, 0);
+        return bpm >= low && bpm <= high ? Integer.valueOf(bpm) : null;
     }
 
     /** The zone name is authoritative; the quarter-hour offset is the fallback. */

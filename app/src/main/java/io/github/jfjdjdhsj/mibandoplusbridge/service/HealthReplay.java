@@ -217,6 +217,7 @@ final class HealthReplay implements AutoCloseable {
                     added |= records.enqueueMeasurement(parser.importedSleepStage(
                             stage.startMs(), stage.endMs(), stage.state(), session.timezone())).added();
                 }
+                added |= importSleepVitals(parser, session);
                 if (added) changed++;
             } catch (RuntimeException skipped) {
                 io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
@@ -234,6 +235,56 @@ final class HealthReplay implements AutoCloseable {
     private List<io.github.jfjdjdhsj.mibandoplusbridge.data.HealthRecord> stored(
             String deviceId, String kind, long start, long end) throws Exception {
         return records.storedRecords(deviceId, kind, start, end);
+    }
+
+    /**
+     * The band never uploads breath packets, so the sleep page had no 呼吸率 and no 心率范围.
+     * Mi Fitness keeps both in the same session row the stages come from: one average breath rate
+     * and the night's own min/max/average heart rate. They enter the store as the band's own kinds,
+     * so the existing OPPO writer fills tables 1048, 1049 and 1071 without a special case.
+     */
+    private boolean importSleepVitals(BandHistoryParser parser, MiFitnessSleep.Session session) {
+        boolean added = false;
+        long start = session.startMs();
+        long end = session.endMs();
+        long mid = start + (end - start) / 2;
+        mid -= mid % 60_000L;
+        Integer breath = session.avgBreath();
+        if (breath != null) {
+            try {
+                added |= records.enqueueMeasurement(parser.importedSleepBreath(
+                        mid, breath * 10, session.timezone())).added();
+            } catch (RuntimeException unsupported) {
+                io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
+                        "history sleep breath " + unsupported.getMessage());
+            }
+        }
+        Integer min = session.minHr();
+        Integer max = session.maxHr();
+        Integer avg = session.avgHr();
+        if (min != null && max != null && avg != null && min <= avg && avg <= max) {
+            long span = end - start;
+            long first = start + Math.min(60_000L, span / 4);
+            long last = end - Math.min(120_000L, span / 4);
+            if (first < mid && mid < last) {
+                added |= enqueueSleepHeart(parser, first, min, session.timezone());
+                added |= enqueueSleepHeart(parser, mid, avg, session.timezone());
+                added |= enqueueSleepHeart(parser, last, max, session.timezone());
+            } else {
+                added |= enqueueSleepHeart(parser, mid, avg, session.timezone());
+            }
+        }
+        return added;
+    }
+
+    private boolean enqueueSleepHeart(BandHistoryParser parser, long atMs, int bpm, String timezone) {
+        try {
+            return records.enqueueMeasurement(parser.importedSleepHeart(atMs, bpm, timezone)).added();
+        } catch (RuntimeException unsupported) {
+            io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
+                    "history sleep heart " + unsupported.getMessage());
+            return false;
+        }
     }
 
     private static java.time.LocalDate localDay(BandHistoryParser.Measurement measurement) {

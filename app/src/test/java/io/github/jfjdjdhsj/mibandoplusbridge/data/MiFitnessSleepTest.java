@@ -55,6 +55,26 @@ public final class MiFitnessSleepTest {
         assertEquals(2000000L, session.stages().get(1).endMs());
     }
 
+    @Test public void sleepVitalsComeFromTheSessionSummary() {
+        String json = "{\"bedtime\":1793888940,\"wake_up_time\":1793916540,"
+                + "\"avg_breath\":14,\"min_hr\":59,\"max_hr\":75,\"avg_hr\":66}";
+        MiFitnessSleep.Session session = MiFitnessSleep.parse(json, "Asia/Shanghai");
+        assertEquals(Integer.valueOf(14), session.avgBreath());
+        assertEquals(Integer.valueOf(59), session.minHr());
+        assertEquals(Integer.valueOf(75), session.maxHr());
+        assertEquals(Integer.valueOf(66), session.avgHr());
+    }
+
+    @Test public void impossibleSleepVitalsAreDropped() {
+        MiFitnessSleep.Session session = MiFitnessSleep.parse(
+                "{\"bedtime\":1000,\"wake_up_time\":2000,\"avg_breath\":0,"
+                        + "\"min_hr\":10,\"max_hr\":400,\"avg_hr\":70}", "Asia/Shanghai");
+        assertNull(session.avgBreath());
+        assertNull(session.minHr());
+        assertNull(session.maxHr());
+        assertEquals(Integer.valueOf(70), session.avgHr());
+    }
+
     @Test public void brokenJsonAndInvertedBoundsAreRejected() {
         assertNull(MiFitnessSleep.parse("{", "Asia/Shanghai"));
         assertNull(MiFitnessSleep.parse("{\"bedtime\":2000,\"wake_up_time\":1000}", "Asia/Shanghai"));
