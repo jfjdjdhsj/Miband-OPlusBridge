@@ -69,7 +69,7 @@ public final class LabActivity extends AppCompatActivity {
             try {
                 TestCallService.start(this, "测试来电");
             } catch (RuntimeException failure) {
-                setResultText("无法创建测试来电：" + failure.getMessage() + "。");
+                setResultText("测试来电建立中断：" + failure.getMessage() + "。");
                 return;
             }
             send("测试来电", BandNotificationCommand.incomingCall("测试来电", Instant.now(), ChinaTime.ZONE), false);

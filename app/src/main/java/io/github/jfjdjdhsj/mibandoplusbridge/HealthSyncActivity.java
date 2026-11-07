@@ -44,7 +44,7 @@ public final class HealthSyncActivity extends AppCompatActivity {
 
         LinearLayout open = screen.section("打开 App 时");
         MaterialSwitch onOpen = screen.switchRow(open, "打开 App 立即同步",
-                "每次打开 App 时先同步一次，5 分钟内重复打开不会再次同步。");
+                "每次打开 App 时先同步一次，5 分钟内重复打开只同步一次。");
         final boolean[] writingOpen = {false};
         onOpen.setChecked(HealthSyncSettings.syncOnOpen(this));
         onOpen.setOnCheckedChangeListener((button, checked) -> {
@@ -78,7 +78,7 @@ public final class HealthSyncActivity extends AppCompatActivity {
         long at = LocalPrefs.open(this, "band-state").getLong("lastSyncAtMs", 0);
         lastSync.setText(at > 0
                 ? "上次同步：" + ChinaTime.dateTime(at)
-                : "还没有完成过同步。连上手环后点「立即同步」。");
+                : "连接手环后点「立即同步」，即可完成第一次同步。");
     }
 
     /** Days, hours and minutes are all accepted so 1 天 and 90 分钟 are equally expressible. */
