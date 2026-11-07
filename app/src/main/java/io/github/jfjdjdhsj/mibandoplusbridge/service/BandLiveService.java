@@ -1653,8 +1653,12 @@ public final class BandLiveService extends Service {
             return;
         }
         iconPackage = pkg;
-        sendSessionCommand(io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand.iconQueryReply(pkg));
-        io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this, "ICON_QUERY pkg=" + pkg);
+        // The reply echoes the name the band asked with: it keys the later upload on that value,
+        // so answering with a longer resolved name would not match its own request.
+        String reply = queried == null || queried.isBlank() ? pkg : queried;
+        sendSessionCommand(io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand.iconQueryReply(reply));
+        io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this,
+                "ICON_QUERY pkg=" + pkg + " reply=" + reply);
     }
 
     private String resolveIconPackage(String queried) {
@@ -1675,6 +1679,9 @@ public final class BandLiveService extends Service {
             io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this, "ICON_BUSY");
             return;
         }
+        io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this,
+                "ICON_REQ pkg=" + pkg + " size=" + size + " format=" + format
+                        + " limit=" + active.notificationPayloadLimit());
         coordinator.execute(() -> {
             try {
                 int[] pixels = io.github.jfjdjdhsj.mibandoplusbridge.notify.NotificationIcons.argb(this, pkg, size);
@@ -1685,12 +1692,14 @@ public final class BandLiveService extends Service {
                     iconUploadBusy.set(false);
                     return;
                 }
+                // Data upload acks carry their own error field, so a non-zero status must not be
+                // treated as a rejection the way ordinary command responses are.
                 queue.request(io.github.jfjdjdhsj.mibandoplusbridge.protocol.NotificationIconUpload.request(encoded),
-                        22, 0).whenComplete((ack, error) -> deliverIcon(active, encoded, ack, error));
+                        22, 0, true).whenComplete((ack, error) -> deliverIcon(active, encoded, ack, error));
             } catch (RuntimeException failure) {
                 iconUploadBusy.set(false);
                 io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this,
-                        "ICON_ENCODE " + failure.getClass().getSimpleName());
+                        "ICON_ENCODE " + failure.getClass().getSimpleName() + " " + failure.getMessage());
             }
         });
     }
@@ -1700,9 +1709,14 @@ public final class BandLiveService extends Service {
         try {
             if (error != null || client != active) {
                 iconUploadBusy.set(false);
-                io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this, "ICON_UPLOAD_FAILED");
+                io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this, "ICON_UPLOAD_FAILED"
+                        + (error == null ? " stale" : " " + error.getClass().getSimpleName()
+                                + " " + error.getMessage()));
                 return;
             }
+            io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this,
+                    "ICON_ACK " + io.github.jfjdjdhsj.mibandoplusbridge.protocol.NotificationIconUpload
+                            .describeAck(ack));
             int chunk = io.github.jfjdjdhsj.mibandoplusbridge.protocol.NotificationIconUpload
                     .acceptedChunk(ack, active.notificationPayloadLimit());
             var parts = io.github.jfjdjdhsj.mibandoplusbridge.protocol.NotificationIconUpload
@@ -1710,7 +1724,8 @@ public final class BandLiveService extends Service {
             sendIconPart(active, parts, 0);
         } catch (RuntimeException failure) {
             iconUploadBusy.set(false);
-            io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this, "ICON_UPLOAD_FAILED");
+            io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this,
+                    "ICON_UPLOAD_FAILED " + failure.getMessage());
         }
     }
 

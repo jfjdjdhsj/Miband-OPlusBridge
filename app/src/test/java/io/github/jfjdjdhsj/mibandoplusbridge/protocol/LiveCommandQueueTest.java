@@ -242,6 +242,18 @@ public final class LiveCommandQueueTest {
         }
     }
 
+    @Test public void requestCanAcceptAResponseThatCarriesItsOwnStatusField() throws Exception {
+        try (Harness h = new Harness()) {
+            var upload = h.queue.request(command(22, 0), 22, 0, true);
+            Sent sent = h.next();
+            XiaomiProto.Command ack = command(22, 0).toBuilder().setStatus(3).build();
+            h.queue.onCommand(ack);
+            h.queue.onAck(sent.sequence);
+            assertEquals(ack, await(upload));
+            h.barrier();
+        }
+    }
+
     @Test public void duplicateHealthWeatherAndBatteryRequestsShareOneOutstandingExchange()
             throws Exception {
         for (var request : new XiaomiProto.Command[]{command(8, 1), command(10, 5), command(2, 1)}) {

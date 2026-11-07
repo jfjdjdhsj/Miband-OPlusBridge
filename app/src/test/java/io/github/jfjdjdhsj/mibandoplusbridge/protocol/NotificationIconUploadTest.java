@@ -58,4 +58,11 @@ public final class NotificationIconUploadTest {
                 .build();
         assertThrows(IllegalArgumentException.class, () -> NotificationIconUpload.acceptedChunk(ack, 2000));
     }
+
+    @Test public void ackWithoutBodyFallsBackToTheDefaultChunk() {
+        XiaomiProto.Command ack = XiaomiProto.Command.newBuilder().setType(22).setSubtype(0)
+                .setStatus(3).build();
+        assertEquals(NotificationIconUpload.DEFAULT_CHUNK,
+                NotificationIconUpload.acceptedChunk(ack, 0));
+    }
 }

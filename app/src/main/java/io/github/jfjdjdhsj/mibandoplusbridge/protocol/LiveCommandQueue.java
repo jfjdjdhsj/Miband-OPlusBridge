@@ -53,17 +53,19 @@ public final class LiveCommandQueue implements AutoCloseable {
         final int responseType;
         final int responseSubtype;
         final Kind kind;
+        final boolean anyStatus;
         final CompletableFuture<XiaomiProto.Command> result = new CompletableFuture<>();
         int sequence = -1;
         boolean acknowledged;
         XiaomiProto.Command response;
         ScheduledFuture<?> timeout;
 
-        Work(XiaomiProto.Command command, int type, int subtype, Kind kind) {
+        Work(XiaomiProto.Command command, int type, int subtype, Kind kind, boolean anyStatus) {
             this.command = command;
             this.responseType = type;
             this.responseSubtype = subtype;
             this.kind = kind;
+            this.anyStatus = anyStatus;
         }
 
         boolean wantsResponse() { return responseType >= 0; }
@@ -121,12 +123,27 @@ public final class LiveCommandQueue implements AutoCloseable {
     /** Completes only after both the matching transport ACK and a successful semantic response. */
     public CompletionStage<XiaomiProto.Command> request(
             XiaomiProto.Command command, int type, int subtype) {
+        return request(command, type, subtype, false);
+    }
+
+    /**
+     * Same as {@link #request(XiaomiProto.Command, int, int)} but the response is delivered even
+     * when it carries a non-zero {@code status}. Data upload acks have their own error field and
+     * the band sets {@code status} for reasons of its own, so the caller must inspect the payload.
+     */
+    public CompletionStage<XiaomiProto.Command> request(
+            XiaomiProto.Command command, int type, int subtype, boolean anyStatus) {
         if (type < 0 || subtype < 0) return failed("LIVE_RESPONSE_KEY_INVALID");
-        return submit(command, type, subtype);
+        return submit(command, type, subtype, anyStatus);
     }
 
     private CompletableFuture<XiaomiProto.Command> submit(
             XiaomiProto.Command command, int type, int subtype) {
+        return submit(command, type, subtype, false);
+    }
+
+    private CompletableFuture<XiaomiProto.Command> submit(
+            XiaomiProto.Command command, int type, int subtype, boolean anyStatus) {
         if (command == null || !command.isInitialized()) return failed("LIVE_COMMAND_INVALID");
         synchronized (lock) {
             if (closed) return failed("LIVE_QUEUE_CLOSED");
@@ -163,7 +180,7 @@ public final class LiveCommandQueue implements AutoCloseable {
                     finishLocked(disposable, null, failure("LIVE_NOTIFICATION_DROPPED"));
                 }
             }
-            Work item = new Work(command, type, subtype, kind);
+            Work item = new Work(command, type, subtype, kind, anyStatus);
             work.add(item);
             item.timeout = deadlines.schedule(() -> expire(item), timeoutMillis, TimeUnit.MILLISECONDS);
             scheduleDrainLocked();
@@ -191,7 +208,7 @@ public final class LiveCommandQueue implements AutoCloseable {
                 if (item.sequence >= 0 && item.wantsResponse()
                         && item.responseType == command.getType()
                         && item.responseSubtype == command.getSubtype()) {
-                    if (command.hasStatus() && command.getStatus() != 0) {
+                    if (!item.anyStatus && command.hasStatus() && command.getStatus() != 0) {
                         finishLocked(item, null, failure("LIVE_COMMAND_REJECTED"));
                     } else {
                         if (item.response == null) item.response = command;

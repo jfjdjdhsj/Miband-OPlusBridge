@@ -52,19 +52,45 @@ public final class NotificationIconUpload {
         return framed.array();
     }
 
+    /**
+     * The band's start ack. Its {@code dataUpload} body is optional in practice: some firmware
+     * answers with an empty command and expects the default 2048-byte chunks, so only an explicit
+     * error field or resume position aborts the upload.
+     */
     public static int acceptedChunk(XiaomiProto.Command ack, int wireLimit) {
-        if (ack == null || !ack.hasDataUpload() || !ack.getDataUpload().hasDataUploadAck()) {
+        XiaomiProto.DataUploadAck reply = ack != null && ack.hasDataUpload()
+                && ack.getDataUpload().hasDataUploadAck()
+                ? ack.getDataUpload().getDataUploadAck() : null;
+        if (reply != null && (reply.getUnknown2() != 0 || reply.getResumePosition() != 0)) {
             throw new IllegalArgumentException("ICON_UPLOAD_REJECTED");
         }
-        XiaomiProto.DataUploadAck reply = ack.getDataUpload().getDataUploadAck();
-        if (reply.getUnknown2() != 0 || reply.getResumePosition() != 0) {
-            throw new IllegalArgumentException("ICON_UPLOAD_REJECTED");
-        }
-        int size = reply.hasChunkSize() && reply.getChunkSize() > 0
+        int size = reply != null && reply.hasChunkSize() && reply.getChunkSize() > 0
                 ? reply.getChunkSize() : DEFAULT_CHUNK;
         if (wireLimit > 0) size = Math.min(size, wireLimit);
         if (size < 8) throw new IllegalArgumentException("ICON_CHUNK");
         return size;
+    }
+
+    /** One line describing the ack, so a failed upload can be diagnosed from the session log. */
+    public static String describeAck(XiaomiProto.Command ack) {
+        if (ack == null) return "ack=null";
+        XiaomiProto.DataUploadAck reply = ack.hasDataUpload()
+                && ack.getDataUpload().hasDataUploadAck()
+                ? ack.getDataUpload().getDataUploadAck() : null;
+        StringBuilder text = new StringBuilder("status=").append(ack.getStatus())
+                .append(" body=").append(reply != null);
+        if (reply != null) {
+            text.append(" unknown2=").append(reply.getUnknown2())
+                    .append(" resume=").append(reply.getResumePosition())
+                    .append(" chunk=").append(reply.hasChunkSize() ? reply.getChunkSize() : -1);
+        }
+        byte[] raw = ack.toByteArray();
+        text.append(" hex=");
+        for (int i = 0; i < Math.min(raw.length, 48); i++) {
+            text.append(Character.forDigit((raw[i] >> 4) & 0xf, 16))
+                    .append(Character.forDigit(raw[i] & 0xf, 16));
+        }
+        return text.toString();
     }
 
     public static List<byte[]> chunks(byte[] envelope, int chunkSize) {
