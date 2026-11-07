@@ -278,8 +278,8 @@ public final class BandStateRepository {
             if (measuredAtMs <= 0 || stepsToday < 0 || stepsToday > 200_000L) return;
             long previousAt = state.getLong("stepsAtMs", 0);
             long previous = state.getLong("stepsToday", -1);
-            boolean sameDay = previousAt > 0 && LocalDate.ofInstant(Instant.ofEpochMilli(previousAt), ZoneId.systemDefault())
-                    .equals(LocalDate.ofInstant(Instant.ofEpochMilli(measuredAtMs), ZoneId.systemDefault()));
+            boolean sameDay = previousAt > 0 && LocalDate.ofInstant(Instant.ofEpochMilli(previousAt), ChinaTime.ZONE)
+                    .equals(LocalDate.ofInstant(Instant.ofEpochMilli(measuredAtMs), ChinaTime.ZONE));
             if (measuredAtMs < previousAt && !(authoritative && sameDay)) return;
             if (!authoritative && sameDay && previous >= stepsToday) return;
             long storedAt = authoritative && previousAt > measuredAtMs ? previousAt : measuredAtMs;
@@ -293,7 +293,7 @@ public final class BandStateRepository {
     }
     /** Already stored files update the card without waiting for another band download. */
     public static void refreshStoredSteps(Context context) {
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = ChinaTime.ZONE;
         long dayStart = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli();
         long dayEnd = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
         try {

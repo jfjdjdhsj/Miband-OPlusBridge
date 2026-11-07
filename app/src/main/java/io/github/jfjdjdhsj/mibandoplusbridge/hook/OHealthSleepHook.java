@@ -437,7 +437,7 @@ public final class OHealthSleepHook {
         return minutes >= 60 ? minutes / 60 + "小时" + minutes % 60 + "分钟" : minutes + "分钟";
     }
     private static String format(HealthRecord record, long time, String pattern) {
-        ZoneId zone = record.timezone == null ? ZoneId.systemDefault() : ZoneId.of(record.timezone);
+        ZoneId zone = record.timezone == null ? io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE : ZoneId.of(record.timezone);
         return DateTimeFormatter.ofPattern(pattern).withZone(zone).format(Instant.ofEpochMilli(time));
     }
     private static String stageName(Integer stage) {

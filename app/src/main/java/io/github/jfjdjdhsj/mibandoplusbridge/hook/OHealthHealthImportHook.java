@@ -488,7 +488,7 @@ public final class OHealthHealthImportHook {
         if (api == null) return false;
         String deviceId = band.getString("deviceId", "");
         if (deviceId.isBlank()) return false;
-        String zone = ZoneId.systemDefault().getId();
+        String zone = io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE.getId();
         HealthRecord record = new HealthRecord("live-heart-" + at, deviceId, "heart_rate",
                 at, at + 60_000L, heart, null, 1, zone, "continuous", false);
         if (!record.hostAccepts()) return false;
@@ -686,7 +686,7 @@ public final class OHealthHealthImportHook {
             for (HealthRecord record : page) {
                 OHealthHealthModels.Kind kind = OHealthHealthModels.Kind.of(record);
                 kind.type(record); // Reject unsupported modes before any write in this page.
-                ZoneId zone = record.timezone == null ? ZoneId.systemDefault() : ZoneId.of(record.timezone);
+                ZoneId zone = record.timezone == null ? io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE : ZoneId.of(record.timezone);
                 LocalDate day = Instant.ofEpochMilli(record.startMs).atZone(zone).toLocalDate();
                 groups.computeIfAbsent(new Batch(kind, day), unused -> new ArrayList<>()).add(record);
             }

@@ -15,8 +15,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import io.github.jfjdjdhsj.mibandoplusbridge.ui.BridgeScreen;
-import java.text.DateFormat;
-import java.util.Date;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -183,8 +181,7 @@ public final class BandDetailsActivity extends AppCompatActivity {
         long lastRead = state.getLong("lastUpdateMs", 0);
         updated.setVisibility(View.VISIBLE);
         updated.setText(lastRead > 0 && lastRead <= System.currentTimeMillis()
-                ? "读取于 " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                        .format(new Date(lastRead))
+                ? "读取于 " + io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.shortTime(lastRead)
                 : "连上后显示读取时间");
         long sync = state.getLong("lastSyncAtMs", 0);
         long steps = state.getLong("stepsToday", -1);
@@ -192,7 +189,7 @@ public final class BandDetailsActivity extends AppCompatActivity {
         history.setVisibility(View.VISIBLE);
         history.setText((steps >= 0 ? "今日 " + steps + " 步" : "今日步数等待同步")
                 + (heart > 0 && heart <= 250 ? " · 最近心率 " + heart + " 次/分" : "")
-                + (sync > 0 ? "\n同步于 " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(new Date(sync)) : ""));
+                + (sync > 0 ? "\n同步于 " + io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.shortTime(sync) : ""));
     }
 
     private void loadStepReviews() {
@@ -331,7 +328,7 @@ public final class BandDetailsActivity extends AppCompatActivity {
     }
 
     private static void appendRecord(StringBuilder text, HealthRecord record) {
-        java.time.ZoneId zone = record.timezone == null ? java.time.ZoneId.systemDefault() : java.time.ZoneId.of(record.timezone);
+        java.time.ZoneId zone = record.timezone == null ? io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE : java.time.ZoneId.of(record.timezone);
         java.time.format.DateTimeFormatter date = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(zone);
         text.append(date.format(java.time.Instant.ofEpochMilli(record.startMs)));
         if (record.kind.startsWith("sleep_")) {

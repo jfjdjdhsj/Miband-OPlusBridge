@@ -16,6 +16,7 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.BandStateRepository;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog;
 import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand;
 import io.github.jfjdjdhsj.mibandoplusbridge.service.BandLiveService;
@@ -209,7 +210,7 @@ public final class PhoneCallMonitor implements AutoCloseable {
 
     private XiaomiProto.Command commandFor(PhoneCallGate.Phase phase) {
         Instant now = Instant.now();
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = ChinaTime.ZONE;
         return switch (phase) {
             case INCOMING -> {
                 String title = BandNotificationListener.currentIncomingCallTitle(context);

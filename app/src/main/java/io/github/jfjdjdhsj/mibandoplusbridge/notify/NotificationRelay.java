@@ -2,8 +2,8 @@
 package io.github.jfjdjdhsj.mibandoplusbridge.notify;
 
 import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -107,7 +107,7 @@ public final class NotificationRelay {
         try {
             command = BandNotificationCommand.fitToPayload(BandNotificationCommand.post(
                     event.packageName(), event.appName(), event.key(), entry.id, title, body,
-                    Instant.ofEpochMilli(event.postedAtMs()), ZoneId.systemDefault()), payloadLimit.getAsInt());
+                    Instant.ofEpochMilli(event.postedAtMs()), ChinaTime.ZONE), payloadLimit.getAsInt());
         } catch (IllegalArgumentException rejected) {
             failure = "NOTIFICATION_PAYLOAD_REJECTED"; return;
         }

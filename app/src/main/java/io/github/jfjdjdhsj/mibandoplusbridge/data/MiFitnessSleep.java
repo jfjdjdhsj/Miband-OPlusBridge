@@ -156,9 +156,9 @@ public final class MiFitnessSleep {
             } catch (RuntimeException unsupported) { }
         }
         int quarters = value.optInt("timezone", Integer.MIN_VALUE);
-        if (quarters == Integer.MIN_VALUE) return ZoneId.systemDefault().getId();
+        if (quarters == Integer.MIN_VALUE) return ChinaTime.ZONE.getId();
         int total = quarters * 15;
-        if (Math.abs(total) > 14 * 60) return ZoneId.systemDefault().getId();
+        if (Math.abs(total) > 14 * 60) return ChinaTime.ZONE.getId();
         String sign = total < 0 ? "-" : "+";
         int abs = Math.abs(total);
         return String.format(java.util.Locale.ROOT, "GMT%s%02d:%02d", sign, abs / 60, abs % 60);

@@ -11,6 +11,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime;
 import io.github.jfjdjdhsj.mibandoplusbridge.ui.BridgeScreen;
 import io.github.jfjdjdhsj.mibandoplusbridge.ui.Copy;
 import io.github.jfjdjdhsj.mibandoplusbridge.integration.WeatherSnapshotProvider;
@@ -19,8 +20,6 @@ import io.github.jfjdjdhsj.mibandoplusbridge.service.BandLiveService;
 import io.github.jfjdjdhsj.mibandoplusbridge.service.WeatherSync;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.text.DateFormat;
-import java.util.Date;
 
 /** Reviews source weather and submits delivery through the shared live service. */
 public final class WeatherActivity extends AppCompatActivity {
@@ -49,8 +48,22 @@ public final class WeatherActivity extends AppCompatActivity {
         screen.filled(source, "获取当前位置天气", this::requestWeather);
         screen.textButton(source, "打开 OHealth", this::openHealth);
         LinearLayout auto = screen.section("自动同步");
+        com.google.android.material.materialswitch.MaterialSwitch autoSync = screen.switchRow(auto,
+                "自动同步天气", "连接期间按设定间隔刷新并推送天气；关闭后只在手环请求或手动发送时更新。");
+        final boolean[] writingAuto = {false};
+        autoSync.setChecked(WeatherSync.enabled(this));
+        autoSync.setOnCheckedChangeListener((button, checked) -> {
+            if (writingAuto[0]) return;
+            if (WeatherSync.setEnabled(this, checked)) {
+                refreshInterval();
+                return;
+            }
+            writingAuto[0] = true;
+            button.setChecked(!checked);
+            writingAuto[0] = false;
+            delivery.setText("开关状态保存中断，再拨一次即可。");
+        });
         intervalStatus = screen.bodyText(auto, "");
-        screen.caption(auto, "连接期间按设定间隔刷新并推送天气，修改后下一次检查即生效。");
         screen.textButton(auto, "设置同步间隔", this::editInterval);
         LinearLayout band = screen.section("手环");
         delivery = screen.bodyText(band, "发送后，在手环上看一眼城市、温度和预报。");
@@ -75,7 +88,8 @@ public final class WeatherActivity extends AppCompatActivity {
     }
 
     private void refreshInterval() {
-        intervalStatus.setText("当前间隔：" + intervalText(WeatherSync.intervalMinutes(this)));
+        intervalStatus.setText((WeatherSync.enabled(this) ? "自动同步已开启，当前间隔：" : "自动同步已关闭，原间隔：")
+                + intervalText(WeatherSync.intervalMinutes(this)));
     }
 
     /** Days, hours and minutes are all accepted so 1 天 and 90 分钟 are equally expressible. */
@@ -262,7 +276,7 @@ public final class WeatherActivity extends AppCompatActivity {
         return message != null && message.matches("[A-Z_]{1,80}") ? message : "WEATHER_UNAVAILABLE";
     }
 
-    private static String time(long value) { return DateFormat.getDateTimeInstance().format(new Date(value)); }
+    private static String time(long value) { return ChinaTime.dateTime(value); }
 
     private static String sourceText(Bundle response) {
         return Copy.weatherSource(response.getString("status", ""), response.getBoolean("pending", false));

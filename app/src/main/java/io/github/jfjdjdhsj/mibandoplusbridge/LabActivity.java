@@ -15,21 +15,19 @@ import io.github.jfjdjdhsj.mibandoplusbridge.data.LocalPrefs;
 import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand;
 import io.github.jfjdjdhsj.mibandoplusbridge.notify.FindPhone;
 import io.github.jfjdjdhsj.mibandoplusbridge.notify.PhoneDnd;
+import io.github.jfjdjdhsj.mibandoplusbridge.notify.TestCallService;
 import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandAlarmCommand;
 import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandDndCommand;
 import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandMusicCommand;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime;
 import io.github.jfjdjdhsj.mibandoplusbridge.service.BandLiveService;
 import io.github.jfjdjdhsj.mibandoplusbridge.ui.BridgeScreen;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Foreground protocol tests. The log keeps protocol fields; MAC, token, and health values stay in memory. */
 public final class LabActivity extends AppCompatActivity {
-    private static final DateTimeFormatter TIME =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private BridgeScreen screen;
@@ -61,15 +59,25 @@ public final class LabActivity extends AppCompatActivity {
         screen.caption(notify, "经当前会话发一条测试通知到这只手环。");
         screen.filled(notify, "发送测试通知", () -> send("测试通知", BandNotificationCommand.post(
                 getPackageName(), "桥接测试", "lab-notify", 1,
-                "测试通知", "这是一条发往手环的测试消息。", Instant.now(), ZoneId.systemDefault()), false));
+                "测试通知", "这是一条发往手环的测试消息。", Instant.now(), ChinaTime.ZONE), false));
         screen.outlined(notify, "撤回测试通知", () -> send("撤回通知",
                 BandNotificationCommand.dismiss(getPackageName(), "lab-notify", 1), false));
 
         LinearLayout call = screen.section("来电");
-        screen.caption(call, "手环会显示来电界面，点「结束测试来电」即可关掉。");
-        screen.filled(call, "发送测试来电", () -> send("测试来电",
-                BandNotificationCommand.incomingCall("测试来电", Instant.now(), ZoneId.systemDefault()), false));
-        screen.outlined(call, "结束测试来电", () -> send("来电结束", BandNotificationCommand.endCall(), false));
+        screen.caption(call, "手表靠手机的 HFP 通道显示来电，所以这里会先建立一通真实的测试来电，再补发来电通知包。点「结束测试来电」关掉。");
+        screen.filled(call, "发送测试来电", () -> {
+            try {
+                TestCallService.start(this, "测试来电");
+            } catch (RuntimeException failure) {
+                setResultText("无法创建测试来电：" + failure.getMessage() + "。");
+                return;
+            }
+            send("测试来电", BandNotificationCommand.incomingCall("测试来电", Instant.now(), ChinaTime.ZONE), false);
+        });
+        screen.outlined(call, "结束测试来电", () -> {
+            TestCallService.stop();
+            send("来电结束", BandNotificationCommand.endCall(), false);
+        });
 
         LinearLayout find = screen.section("查找手机");
         screen.caption(find, "调用 OPPO 健康自己的查找手机响铃。");
@@ -133,7 +141,7 @@ public final class LabActivity extends AppCompatActivity {
         if (state.getBoolean("charging", false)) text.append("（充电中）");
         text.append('\n');
         long sync = state.getLong("lastSyncAtMs", 0);
-        text.append("上次同步：").append(sync > 0 ? TIME.format(Instant.ofEpochMilli(sync)) : "—").append('\n');
+        text.append("上次同步：").append(sync > 0 ? ChinaTime.dateTime(sync) : "—").append('\n');
         String deviceId = state.getString("deviceId", "");
         text.append("设备号：").append(deviceId.length() >= 16 ? deviceId.substring(0, 16) + "…" : blank(deviceId, "—")).append('\n');
         text.append("MAC：").append(tailMac(state.getString("mac", "")));

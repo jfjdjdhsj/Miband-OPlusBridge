@@ -135,7 +135,7 @@ final class OHealthSleepWriter {
         String queued = band.getString("deviceId", "");
         String device = OHealthDeviceHook.healthId(queued);
         List<HealthRecord> records = history(context, account, queued);
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE;
         HookRuntime.log("OHEALTH_SLEEP_ZONE " + zone.getId());
         List<OHealthSleepPlan.Night> nights = OHealthSleepPlan.nights(records, zone);
         if (nights.isEmpty()) return;

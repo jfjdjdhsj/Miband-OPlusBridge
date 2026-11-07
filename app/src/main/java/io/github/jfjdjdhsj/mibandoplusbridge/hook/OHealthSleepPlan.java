@@ -38,7 +38,7 @@ public final class OHealthSleepPlan {
         public Night(int date, long fallAsleepMs, long wakeMs, long sleepMinutes, long deepMinutes,
                 long lightMinutes, long remMinutes, long wakeMinutes, List<Segment> segments,
                 long dayStartMs, long dayEndMs) {
-            this(date, ZoneId.systemDefault(), fallAsleepMs, wakeMs, sleepMinutes, deepMinutes,
+            this(date, io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE, fallAsleepMs, wakeMs, sleepMinutes, deepMinutes,
                     lightMinutes, remMinutes, wakeMinutes, segments, dayStartMs, dayEndMs);
         }
     }
@@ -84,7 +84,7 @@ public final class OHealthSleepPlan {
 
     /** The phone zone. Health's own 20:00 boundary and summary clock use this, not the band file. */
     public static List<Night> nights(List<HealthRecord> records) {
-        return nights(records, ZoneId.systemDefault());
+        return nights(records, io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE);
     }
 
     /**
@@ -231,7 +231,7 @@ public final class OHealthSleepPlan {
                     mainSession = night;
                 }
             }
-            if (zone == null) zone = ZoneId.systemDefault();
+            if (zone == null) zone = io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE;
 
             days.add(new Day(date, zone, minFall, maxWake, totalSleep, totalDeep, totalLight,
                     totalRem, totalWake, List.copyOf(dateNights), mainSession, dayStart, dayEnd));

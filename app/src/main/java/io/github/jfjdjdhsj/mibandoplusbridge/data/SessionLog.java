@@ -31,7 +31,7 @@ public final class SessionLog {
                 if (!existing.isBlank() && !existing.contains(START_MARK)) {
                     existing = START_MARK + "legacy ---\n" + existing;
                 }
-                String next = retain(existing + START_MARK + Instant.now() + " ---\n");
+                String next = retain(existing + START_MARK + ChinaTime.dateTime(Instant.now()) + " ---\n");
                 Files.write(file.toPath(), next.getBytes(StandardCharsets.UTF_8));
             } catch (IOException ignored) { }
         }
@@ -47,7 +47,7 @@ public final class SessionLog {
 
     public static void line(Context context, String message) {
         if (context == null || message == null || message.isBlank()) return;
-        String row = Instant.now() + " " + message.replace('\n', ' ').replace('\r', ' ') + "\n";
+        String row = ChinaTime.logStamp(Instant.now()) + " " + message.replace('\n', ' ').replace('\r', ' ') + "\n";
         byte[] bytes = row.getBytes(StandardCharsets.UTF_8);
         synchronized (LOCK) {
             try {

@@ -939,7 +939,7 @@ public final class SppDiagnosticClient implements AutoCloseable {
     }
 
     private void summarizeSport(java.util.List<BandHistoryParser.Measurement> measurements) {
-        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        java.time.ZoneId zone = io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE;
         long dayStart = java.time.LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli();
         long dayEnd = java.time.LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
         int heart = -1;
@@ -1010,7 +1010,7 @@ public final class SppDiagnosticClient implements AutoCloseable {
 
     private void sendObservedClock() throws Exception {
         int clockAck = sentSequence;
-        sendCommand(BandClockCommand.at(Instant.now(), ZoneId.systemDefault(),
+        sendCommand(BandClockCommand.at(Instant.now(), io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE,
                 DateFormat.is24HourFormat(context)));
         awaitTransportAck(clockAck);
         progress.accept("CLOCK_ACKED");

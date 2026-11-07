@@ -95,7 +95,7 @@ final class OHealthStepWriter {
         List<HealthRecord> records = history(context, account, queued);
         List<BandHistoryParser.StepDay> days = new ArrayList<>(BandHistoryParser.preferLiveTotal(
                 BandHistoryParser.stepDays(records), band.getLong("stepsToday", -1),
-                band.getLong("stepsAtMs", 0), java.time.ZoneId.systemDefault()));
+                band.getLong("stepsAtMs", 0), io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE));
         days.removeIf(day -> day.steps <= 0 && day.calories < 0 && day.moveAbout < 0 && day.distance < 0);
         if (days.isEmpty()) return;
         SharedPreferences written = context.getSharedPreferences("oplusband-step-import", Context.MODE_PRIVATE);
@@ -156,7 +156,7 @@ final class OHealthStepWriter {
             if (requests.size() == 31) break;
             if (counts.get(day.date) != 1 || day.steps <= 0 || day.steps > Integer.MAX_VALUE
                     || day.startMs > now - 86_400_000L || day.startMs < now - 32L * 86_400_000L) continue;
-            String zone = day.timezone == null || day.timezone.isBlank() ? ZoneId.systemDefault().getId() : day.timezone;
+            String zone = day.timezone == null || day.timezone.isBlank() ? io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE.getId() : day.timezone;
             try {
                 requests.add(new io.github.jfjdjdhsj.mibandoplusbridge.data.StepAggregateAuditStore.Request(
                         account, queued, device, day.date, day.startMs, zone, day.steps,
@@ -488,7 +488,7 @@ final class OHealthStepWriter {
     }
 
     private static boolean isToday(BandHistoryParser.StepDay day) {
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE;
         if (day.timezone != null && !day.timezone.isBlank()) {
             try {
                 zone = ZoneId.of(day.timezone);

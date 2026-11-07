@@ -14,7 +14,7 @@ import io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand;
 import io.github.jfjdjdhsj.mibandoplusbridge.service.BandLiveService;
 import io.github.jfjdjdhsj.mibandoplusbridge.service.HostKeepAlive;
 import java.time.Instant;
-import java.time.ZoneId;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime;
 
 /** OHealth process cannot see BandLiveService.instance. This is the only notify IPC. */
 public final class HostNotifyProvider extends ContentProvider {
@@ -116,12 +116,12 @@ public final class HostNotifyProvider extends ContentProvider {
                             : BandNotificationCommand.call(
                                     CallPresentation.displayName(extras.getString("title"),
                                             CallPresentation.kind(callState)),
-                                    null, callState, when, ZoneId.systemDefault(), false))
+                                    null, callState, when, ChinaTime.ZONE, false))
                     : (removed
                             ? BandNotificationCommand.dismiss(pkg, key, id)
                             : BandNotificationCommand.post(pkg, app, key, id,
                                     extras.getString("title", ""), extras.getString("body", ""),
-                                    when, ZoneId.systemDefault()));
+                                    when, ChinaTime.ZONE));
             if (call && !removed && previous != 0) {
                 var next = command;
                 BandLiveService.forwardHostNotification(getContext(), BandNotificationCommand.endCall())

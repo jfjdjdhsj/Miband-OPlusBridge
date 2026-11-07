@@ -289,7 +289,7 @@ final class HealthReplay implements AutoCloseable {
 
     private static java.time.LocalDate localDay(BandHistoryParser.Measurement measurement) {
         java.time.ZoneId zone = measurement.timezone == null
-                ? java.time.ZoneId.systemDefault() : java.time.ZoneId.of(measurement.timezone);
+                ? io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE : java.time.ZoneId.of(measurement.timezone);
         return java.time.Instant.ofEpochMilli(measurement.startMs).atZone(zone).toLocalDate();
     }
 
@@ -300,7 +300,7 @@ final class HealthReplay implements AutoCloseable {
      */
     private void deriveWalkingHeart(String deviceId, String identity, Set<java.time.LocalDate> measuredDays) {
         if (closed) return;
-        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        java.time.ZoneId zone = io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.ZONE;
         Set<java.time.LocalDate> days = new HashSet<>(measuredDays);
         android.content.SharedPreferences prefs =
                 context.getSharedPreferences("oplusband-history", Context.MODE_PRIVATE);

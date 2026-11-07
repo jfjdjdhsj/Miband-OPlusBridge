@@ -191,6 +191,7 @@ public final class MainActivity extends AppCompatActivity {
         screen.heading("功能");
         LinearLayout links = screen.card();
         screen.navRow(links, "设备详情", () -> startActivity(new Intent(this, BandDetailsActivity.class)));
+        screen.navRow(links, "健康同步", () -> startActivity(new Intent(this, HealthSyncActivity.class)));
         screen.navRow(links, "天气同步", () -> startActivity(new Intent(this, WeatherActivity.class)));
         screen.caption(links, "在控制中心添加「手环」磁贴，下拉或点按即可连接。");
 
@@ -311,6 +312,26 @@ public final class MainActivity extends AppCompatActivity {
             });
         });
         ensureCallPermissions();
+        syncOnOpenIfDue();
+    }
+
+    /** One sync when the app is opened, but not again for the cooldown window. */
+    private void syncOnOpenIfDue() {
+        if (!io.github.jfjdjdhsj.mibandoplusbridge.data.HealthSyncSettings.syncOnOpen(this)) return;
+        long now = System.currentTimeMillis();
+        long last = io.github.jfjdjdhsj.mibandoplusbridge.data.HealthSyncSettings.lastOpenSyncAtMs(this);
+        if (last > 0 && now - last
+                < io.github.jfjdjdhsj.mibandoplusbridge.data.HealthSyncSettings.OPEN_SYNC_COOLDOWN_MS) return;
+        if (!new BandStateRepository(this).isRegistered()) return;
+        String result;
+        try {
+            result = BandLiveService.requestSync(this);
+        } catch (RuntimeException denied) {
+            return;
+        }
+        if ("ACCEPTED".equals(result)) {
+            io.github.jfjdjdhsj.mibandoplusbridge.data.HealthSyncSettings.recordOpenSync(this, now);
+        }
     }
 
     @Override protected void onDestroy() {
@@ -786,8 +807,7 @@ public final class MainActivity extends AppCompatActivity {
         long lastSync = state.getLong("lastSyncAtMs", 0);
         String batteryText = battery >= 0 && battery <= 100 ? "电量 " + battery + "%" : "";
         String syncText = lastSync > 0
-                ? "同步于 " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,
-                        java.text.DateFormat.SHORT).format(new java.util.Date(lastSync))
+                ? "同步于 " + io.github.jfjdjdhsj.mibandoplusbridge.data.ChinaTime.shortTime(lastSync)
                 : "";
         if (batteryText.isEmpty()) return syncText;
         if (syncText.isEmpty()) return batteryText;

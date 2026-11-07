@@ -43,8 +43,12 @@ public final class BandLiveService extends Service {
     private long nextWeatherAt;
     /** Mirrors the user setting so a change mid-session can restart the countdown. */
     private long weatherIntervalNanos = TimeUnit.MINUTES.toNanos(WeatherSync.DEFAULT_INTERVAL_MINUTES);
-    /** While idle, ask only for the battery and today's file list. Unchanged files and weather stay off the radio so the ACL can still sniff. */
-    private static final long IDLE_POLL_MINUTES = 30;
+    private long healthIntervalNanos = TimeUnit.MINUTES.toNanos(
+            io.github.jfjdjdhsj.mibandoplusbridge.data.HealthSyncSettings.DEFAULT_INTERVAL_MINUTES);
+    /** True while the history round in flight was started by the interval, not by a tap. */
+    private volatile boolean periodicHealthPending;
+    /** Set before a delivery the user asked for, so the sync notice follows only those. */
+    private volatile boolean notifyWeatherDelivery;
     /**
      * The band reports the level itself and only pushes a change when its own counter moves, so
      * the phone copy is whatever the last request returned. The idle session is already up, and
@@ -303,6 +307,7 @@ public final class BandLiveService extends Service {
                 || !new BandStateRepository(context).isRegistered()) {
             return java.util.concurrent.CompletableFuture.failedFuture(new IllegalStateException("LIVE_SESSION_REQUIRED"));
         }
+        if (!inspect) live.notifyWeatherDelivery = true;
         return inspect ? live.weatherSync.inspectCities(sample) : live.weatherSync.send(sample);
     }
 
@@ -648,6 +653,11 @@ public final class BandLiveService extends Service {
         dndSync.seed(bandSyncEnabled(this));
         dndSyncStored = dndSync.on();
         weatherSync = new WeatherSync(this, () -> commands, coordinator);
+        weatherSync.onDelivered(() -> {
+            if (!notifyWeatherDelivery) return;
+            notifyWeatherDelivery = false;
+            io.github.jfjdjdhsj.mibandoplusbridge.notify.SyncNotice.weather(this, System.currentTimeMillis());
+        });
         healthReplay = new HealthReplay(this, this::healthCollectionStatus, () -> {
             try {
                 coordinator.execute(() -> { if (!stopRequested && historySync != null) historySync.resume(); });
@@ -861,14 +871,20 @@ public final class BandLiveService extends Service {
                             } catch (RuntimeException unavailable) {
                                 healthCollectionStatus("HEALTH_STORAGE_UNAVAILABLE");
                             }
+                            if (periodicHealthPending) {
+                                periodicHealthPending = false;
+                                io.github.jfjdjdhsj.mibandoplusbridge.notify.SyncNotice
+                                        .health(this, System.currentTimeMillis());
+                            }
                             weatherSync.releaseForecast(weatherEpoch);
                         }, reason -> {
+                            periodicHealthPending = false;
                             healthCollectionStatus(reason);
                             weatherSync.releaseForecast(weatherEpoch);
                         }, healthReplay::hasCapacity);
                         long now = System.nanoTime();
                         nextBatteryAt = now + TimeUnit.MINUTES.toNanos(BATTERY_POLL_MINUTES);
-                        nextHealthAt = now + TimeUnit.MINUTES.toNanos(IDLE_POLL_MINUTES);
+                        nextHealthAt = now + healthInterval();
                         nextSleepFileAt = now + TimeUnit.MINUTES.toNanos(10);
                         nextWeatherAt = now + weatherInterval();
                         syncRequested = false;
@@ -1093,10 +1109,18 @@ public final class BandLiveService extends Service {
                         if (error != null) writeStatus("BATTERY_REFRESH_FAILED");
                     });
         }
-        if (syncRequested || now >= nextHealthAt) {
+        long healthInterval = healthInterval();
+        if (healthInterval != healthIntervalNanos) {
+            // A shorter setting takes effect now instead of after the old, possibly day-long, wait.
+            healthIntervalNanos = healthInterval;
+            nextHealthAt = now + healthInterval;
+        }
+        if (syncRequested || (io.github.jfjdjdhsj.mibandoplusbridge.data.HealthSyncSettings.enabled(this)
+                && now >= nextHealthAt)) {
             boolean historical = syncRequested;
             syncRequested = false;
-            nextHealthAt = now + TimeUnit.MINUTES.toNanos(IDLE_POLL_MINUTES);
+            nextHealthAt = now + healthInterval;
+            periodicHealthPending = !historical;
             historySync.request(historical);
             if (historical) {
                 bindHealthHost();
@@ -1116,10 +1140,16 @@ public final class BandLiveService extends Service {
             weatherIntervalNanos = interval;
             nextWeatherAt = now + interval;
         }
-        if (now >= nextWeatherAt) {
+        if (WeatherSync.enabled(this) && now >= nextWeatherAt) {
             nextWeatherAt = now + interval;
+            notifyWeatherDelivery = true;
             weatherSync.refreshAndSend();
         }
+    }
+
+    private long healthInterval() {
+        return TimeUnit.MINUTES.toNanos(
+                io.github.jfjdjdhsj.mibandoplusbridge.data.HealthSyncSettings.intervalMinutes(this));
     }
 
     private long weatherInterval() {

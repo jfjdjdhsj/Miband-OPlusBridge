@@ -47,6 +47,8 @@ public final class WeatherSync implements AutoCloseable {
     private ScheduledFuture<?> expiry;
     private LiveCommandQueue transactionQueue;
     private BandWeatherEncoder.Sample lastSent;
+    /** Runs after a forecast actually reaches the band. Used for the sync notice. */
+    private volatile Runnable delivered;
 
     public WeatherSync(Context context, Supplier<LiveCommandQueue> queue,
                        ScheduledExecutorService coordinator) {
@@ -69,6 +71,8 @@ public final class WeatherSync implements AutoCloseable {
         if (deferForecast) return CompletableFuture.completedFuture(null);
         return submit(Operation.REFRESH, null);
     }
+
+    public void onDelivered(Runnable listener) { this.delivered = listener; }
 
     /**
      * The connect burst also lists and pulls activity files. This firmware drops the GATT
@@ -96,6 +100,16 @@ public final class WeatherSync implements AutoCloseable {
     public static final long MAX_INTERVAL_MINUTES = 7 * 24 * 60;
     private static final String PREFS = "weather-sync";
     private static final String INTERVAL_KEY = "intervalMinutes";
+    private static final String ENABLED_KEY = "enabled";
+
+    /** Automatic pushes stop while off. A watch request and the send button still work. */
+    public static boolean enabled(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED_KEY, true);
+    }
+
+    public static boolean setEnabled(Context context, boolean on) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ENABLED_KEY, on).commit();
+    }
 
     /** How often the live service refreshes and pushes weather. Clamped to a sane range. */
     public static long intervalMinutes(Context context) {
@@ -431,6 +445,12 @@ public final class WeatherSync implements AutoCloseable {
         cancelExpiry();
         record(error == null ? completed == Operation.INSPECT ? "WEATHER_CITIES_READY" : "WEATHER_TRANSPORT_CONFIRMED" : error);
         if (error == null) result.complete(null); else result.completeExceptionally(new Failure(error));
+        if (error == null && completed != Operation.INSPECT) {
+            Runnable listener = delivered;
+            if (listener != null) {
+                try { listener.run(); } catch (RuntimeException ignored) { }
+            }
+        }
     }
     private void record(String status) {
         try {
