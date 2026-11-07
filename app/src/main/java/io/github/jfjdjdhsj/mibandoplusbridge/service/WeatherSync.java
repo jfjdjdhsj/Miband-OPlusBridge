@@ -89,6 +89,27 @@ public final class WeatherSync implements AutoCloseable {
     }
     /** Idle poll. The watch's own weather request still uses {@link #refreshAndSend()}. */
     public CompletionStage<Void> sendIfChanged() { return submit(Operation.IF_CHANGED, null); }
+
+    public static final long DEFAULT_INTERVAL_MINUTES = 30;
+    /** Below a quarter hour the OHealth weather service is asked faster than it refreshes. */
+    public static final long MIN_INTERVAL_MINUTES = 15;
+    public static final long MAX_INTERVAL_MINUTES = 7 * 24 * 60;
+    private static final String PREFS = "weather-sync";
+    private static final String INTERVAL_KEY = "intervalMinutes";
+
+    /** How often the live service refreshes and pushes weather. Clamped to a sane range. */
+    public static long intervalMinutes(Context context) {
+        long stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getLong(INTERVAL_KEY, DEFAULT_INTERVAL_MINUTES);
+        return Math.max(MIN_INTERVAL_MINUTES, Math.min(MAX_INTERVAL_MINUTES, stored));
+    }
+
+    public static void setIntervalMinutes(Context context, long minutes) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putLong(INTERVAL_KEY, Math.max(MIN_INTERVAL_MINUTES, Math.min(MAX_INTERVAL_MINUTES, minutes)))
+                .apply();
+    }
+
     public CompletionStage<Void> inspectCities(BandWeatherEncoder.Sample sample) {
         return submit(Operation.INSPECT, sample);
     }

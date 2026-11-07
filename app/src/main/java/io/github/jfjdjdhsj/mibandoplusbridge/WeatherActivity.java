@@ -33,6 +33,7 @@ public final class WeatherActivity extends AppCompatActivity {
     private Button send;
     private Button review;
     private Button clearReview;
+    private TextView intervalStatus;
     private volatile BandWeatherEncoder.Sample ready;
     private boolean running;
     private final ContentObserver updates = new ContentObserver(main) {
@@ -47,6 +48,10 @@ public final class WeatherActivity extends AppCompatActivity {
         screen.caption(source, "使用 OHealth 已有的天气和定位，天气和地点有效后即可发送到手环。");
         screen.filled(source, "获取当前位置天气", this::requestWeather);
         screen.textButton(source, "打开 OHealth", this::openHealth);
+        LinearLayout auto = screen.section("自动同步");
+        intervalStatus = screen.bodyText(auto, "");
+        screen.caption(auto, "连接期间按设定间隔刷新并推送天气，修改后下一次检查即生效。");
+        screen.textButton(auto, "设置同步间隔", this::editInterval);
         LinearLayout band = screen.section("手环");
         delivery = screen.bodyText(band, "发送后，在手环上看一眼城市、温度和预报。");
         send = screen.filled(band, "发送到手环", this::sendWeather);
@@ -55,6 +60,7 @@ public final class WeatherActivity extends AppCompatActivity {
         association = screen.bodyText(city, "");
         clearReview = screen.textButton(city, "解除城市关联", this::clearAssociation);
         refreshAssociation();
+        refreshInterval();
         review.setEnabled(false);
         clearReview.setEnabled(false);
         send.setEnabled(false);
@@ -65,6 +71,70 @@ public final class WeatherActivity extends AppCompatActivity {
     @Override protected void onResume() {
         super.onResume();
         if (status != null) refreshSnapshot();
+        if (intervalStatus != null) refreshInterval();
+    }
+
+    private void refreshInterval() {
+        intervalStatus.setText("当前间隔：" + intervalText(WeatherSync.intervalMinutes(this)));
+    }
+
+    /** Days, hours and minutes are all accepted so 1 天 and 90 分钟 are equally expressible. */
+    private static String intervalText(long minutes) {
+        if (minutes >= 24 * 60) {
+            long days = minutes / (24 * 60), rest = minutes % (24 * 60);
+            if (rest == 0) return days + " 天";
+            return days + " 天 " + intervalText(rest);
+        }
+        if (minutes >= 60) {
+            long hours = minutes / 60, rest = minutes % 60;
+            return rest == 0 ? hours + " 小时" : hours + " 小时 " + rest + " 分钟";
+        }
+        return minutes + " 分钟";
+    }
+
+    private void editInterval() {
+        long current = WeatherSync.intervalMinutes(this);
+        int pad = Math.round(24 * getResources().getDisplayMetrics().density);
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(pad, pad, pad, 0);
+        android.widget.EditText days = intervalField(form, "天", current / (24 * 60));
+        android.widget.EditText hours = intervalField(form, "小时", current % (24 * 60) / 60);
+        android.widget.EditText minutes = intervalField(form, "分钟", current % 60);
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("天气同步间隔")
+                .setMessage("最少 " + WeatherSync.MIN_INTERVAL_MINUTES + " 分钟，最长 "
+                        + (WeatherSync.MAX_INTERVAL_MINUTES / (24 * 60)) + " 天。留空按 0 计算。")
+                .setView(form)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (dialog, ignored) -> {
+                    long total = intervalValue(days) * 24 * 60 + intervalValue(hours) * 60 + intervalValue(minutes);
+                    long saved = Math.max(WeatherSync.MIN_INTERVAL_MINUTES,
+                            Math.min(WeatherSync.MAX_INTERVAL_MINUTES, total));
+                    WeatherSync.setIntervalMinutes(this, saved);
+                    refreshInterval();
+                    delivery.setText(saved == total
+                            ? "自动同步已设为每 " + intervalText(saved) + "。"
+                            : "间隔超出范围，已设为每 " + intervalText(saved) + "。");
+                })
+                .show();
+    }
+
+    private android.widget.EditText intervalField(LinearLayout parent, String hint, long value) {
+        android.widget.EditText field = new android.widget.EditText(this);
+        field.setHint(hint);
+        field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        field.setText(value == 0 ? "" : String.valueOf(value));
+        parent.addView(field);
+        return field;
+    }
+
+    private static long intervalValue(android.widget.EditText field) {
+        try {
+            return Long.parseLong(field.getText().toString().trim());
+        } catch (NumberFormatException blank) {
+            return 0;
+        }
     }
 
     private void requestWeather() {

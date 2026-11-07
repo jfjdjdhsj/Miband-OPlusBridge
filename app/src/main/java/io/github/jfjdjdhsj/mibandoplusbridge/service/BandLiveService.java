@@ -41,6 +41,8 @@ public final class BandLiveService extends Service {
     private long nextBatteryAt;
     private long nextHealthAt;
     private long nextWeatherAt;
+    /** Mirrors the user setting so a change mid-session can restart the countdown. */
+    private long weatherIntervalNanos = TimeUnit.MINUTES.toNanos(WeatherSync.DEFAULT_INTERVAL_MINUTES);
     /** While idle, ask only for the battery and today's file list. Unchanged files and weather stay off the radio so the ACL can still sniff. */
     private static final long IDLE_POLL_MINUTES = 30;
     /**
@@ -668,6 +670,10 @@ public final class BandLiveService extends Service {
         }
         sleepArmedAtMs = sleepPauseOn ? armed : Long.MAX_VALUE;
         coordinator.scheduleAtFixedRate(this::tick, 1, 1, TimeUnit.MINUTES);
+        // Sleep is also read from Mi Fitness, so the import must run while the band link is down.
+        coordinator.scheduleWithFixedDelay(() -> {
+            if (!stopRequested && healthReplay != null) healthReplay.request();
+        }, 2, 30, TimeUnit.MINUTES);
         coordinator.scheduleAtFixedRate(this::expireHeld, 5, 5, TimeUnit.SECONDS);
         try {
             IntentFilter bluetooth = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
@@ -861,7 +867,7 @@ public final class BandLiveService extends Service {
                         nextBatteryAt = now + TimeUnit.MINUTES.toNanos(BATTERY_POLL_MINUTES);
                         nextHealthAt = now + TimeUnit.MINUTES.toNanos(IDLE_POLL_MINUTES);
                         nextSleepFileAt = now + TimeUnit.MINUTES.toNanos(10);
-                        nextWeatherAt = now + TimeUnit.MINUTES.toNanos(30);
+                        nextWeatherAt = now + weatherInterval();
                         syncRequested = false;
                         healthReplay.request();
                         dndSync.newLink();
@@ -1091,7 +1097,7 @@ public final class BandLiveService extends Service {
             historySync.request(historical);
             if (historical) {
                 bindHealthHost();
-                nextWeatherAt = now + TimeUnit.MINUTES.toNanos(30);
+                nextWeatherAt = now + weatherInterval();
                 weatherSync.refreshAndSend();
             }
         }
@@ -1100,10 +1106,21 @@ public final class BandLiveService extends Service {
             nextSleepFileAt = now + TimeUnit.MINUTES.toNanos(10);
             historySync.request(false);
         }
-        if (now >= nextWeatherAt) {
-            nextWeatherAt = now + TimeUnit.MINUTES.toNanos(30);
-            weatherSync.sendIfChanged();
+        long interval = weatherInterval();
+        if (interval != weatherIntervalNanos) {
+            // The user changed the period while this session was up; restart the countdown so a
+            // shorter setting takes effect now instead of after the old, possibly day-long, wait.
+            weatherIntervalNanos = interval;
+            nextWeatherAt = now + interval;
         }
+        if (now >= nextWeatherAt) {
+            nextWeatherAt = now + interval;
+            weatherSync.refreshAndSend();
+        }
+    }
+
+    private long weatherInterval() {
+        return TimeUnit.MINUTES.toNanos(WeatherSync.intervalMinutes(this));
     }
 
     private static boolean retryable(String code) {

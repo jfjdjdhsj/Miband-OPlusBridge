@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Copies com.mi.health device_db with root and reads it in this app. The copy is deleted. */
 public final class MiFitnessDatabase {
-    private static final String SOURCE = "/data/data/com.mi.health/databases";
+    static final String SOURCE = "/data/data/com.mi.health/databases";
 
     public static final class Snapshot {
         public final String userId;
@@ -189,7 +189,7 @@ public final class MiFitnessDatabase {
         }
     }
 
-    private static String execute(String scriptPath) throws Failure {
+    static String execute(String scriptPath) throws Failure {
         if (!scriptPath.matches("[A-Za-z0-9_./-]+")) throw new Failure("MI_DATABASE_UNREADABLE");
         Process process = null;
         try {

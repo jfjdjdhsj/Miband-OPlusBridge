@@ -7,6 +7,8 @@ import android.os.UserManager;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.BindingStore;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.BandStateRepository;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.HealthRecordStore;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.MiFitnessDatabase;
+import io.github.jfjdjdhsj.mibandoplusbridge.data.MiFitnessSleep;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.RawFitnessFileStore;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.SleepStageAlign;
 import io.github.jfjdjdhsj.mibandoplusbridge.data.WalkingHeartRate;
@@ -26,6 +28,8 @@ import java.util.function.Consumer;
 final class HealthReplay implements AutoCloseable {
     private static final int WALKING_BACKFILL_DAYS = 30;
     private static final long DAY_HALF_MS = 43_200_000L;
+    private static final long MI_SLEEP_INTERVAL_MS = 30L * 60_000L;
+    private static final long MI_SLEEP_WINDOW_MS = 30L * 86_400_000L;
     private static volatile boolean walkingBackfilled;
     private final Context context;
     private final HealthRecordStore records;
@@ -164,9 +168,67 @@ final class HealthReplay implements AutoCloseable {
             io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
                     "history walking deferred " + failed.getClass().getSimpleName());
         }
+        importMiFitnessSleep(deviceId, identity);
         alignStoredSleep(identity);
         if (!closed) BandStateRepository.refreshStoredSteps(context);
         status.accept("HEALTH_LOCAL_RECORDS_READY");
+    }
+
+    /**
+     * Mi Fitness keeps a complete night even when the band never uploads its sleep file, which is
+     * what the watch does on some firmware. Those sessions enter the same store the band file
+     * would, so the existing OPPO writer needs no special case. Re-reading the vendor database
+     * spawns a root copy, so the pass is throttled.
+     */
+    private void importMiFitnessSleep(String deviceId, String identity) {
+        if (closed || deviceId == null || deviceId.isBlank()
+                || identity == null || identity.isBlank()) return;
+        android.content.SharedPreferences prefs =
+                context.getSharedPreferences("oplusband-history", Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        if (now - prefs.getLong("mi-sleep-at", 0) < MI_SLEEP_INTERVAL_MS) return;
+        if (!prefs.edit().putLong("mi-sleep-at", now).commit()) return;
+        List<MiFitnessSleep.Session> sessions;
+        try {
+            sessions = MiFitnessSleep.read(context, now - MI_SLEEP_WINDOW_MS);
+        } catch (MiFitnessDatabase.Failure unavailable) {
+            io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
+                    "history sleep mifitness " + unavailable.code);
+            return;
+        } catch (RuntimeException unavailable) {
+            io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
+                    "history sleep mifitness " + unavailable.getClass().getSimpleName());
+            return;
+        }
+        if (sessions.isEmpty()) return;
+        BandHistoryParser parser;
+        try {
+            parser = new BandHistoryParser("derived", deviceId, identity);
+        } catch (IllegalArgumentException unusable) {
+            return;
+        }
+        int changed = 0;
+        for (MiFitnessSleep.Session session : sessions) {
+            if (closed) return;
+            try {
+                boolean added = records.enqueueMeasurement(parser.importedSleepInterval(
+                        session.startMs(), session.endMs(), session.timezone(), session.complete())).added();
+                for (MiFitnessSleep.Stage stage : session.stages()) {
+                    added |= records.enqueueMeasurement(parser.importedSleepStage(
+                            stage.startMs(), stage.endMs(), stage.state(), session.timezone())).added();
+                }
+                if (added) changed++;
+            } catch (RuntimeException skipped) {
+                io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
+                        "history sleep mifitness skipped " + skipped.getMessage());
+            }
+        }
+        if (changed > 0) {
+            context.getContentResolver().notifyChange(HealthQueueProvider.URI, null);
+            context.getContentResolver().notifyChange(HealthQueueProvider.RECORDS_URI, null);
+        }
+        io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context,
+                "history sleep mifitness sessions=" + sessions.size() + " changed=" + changed);
     }
 
     private List<io.github.jfjdjdhsj.mibandoplusbridge.data.HealthRecord> stored(

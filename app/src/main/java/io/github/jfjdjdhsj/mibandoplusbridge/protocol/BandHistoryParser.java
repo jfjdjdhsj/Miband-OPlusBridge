@@ -634,6 +634,21 @@ public final class BandHistoryParser {
         return measurement("heart_rate", atMs, atMs + 1, value, timezone, mode, false);
     }
 
+    /**
+     * A sleep interval whose source is not a band history file. The identity is the same
+     * device and start minute the band file would use, so an overlapping band night replaces
+     * this row instead of being written twice.
+     */
+    public Measurement importedSleepInterval(long startMs, long endMs, String timezone, boolean complete) {
+        return measurement("sleep_interval", startMs, endMs, null, timezone, "sleep", complete);
+    }
+
+    /** Stage numbers are the band's own: 2 deep, 3 light, 4 REM, 5 awake. */
+    public Measurement importedSleepStage(long startMs, long endMs, int stage, String timezone) {
+        if (stage < 2 || stage > 5) throw new IllegalArgumentException("UNSUPPORTED_SLEEP_STAGE");
+        return sleepStage(startMs, endMs, stage, timezone);
+    }
+
     /** True when every measurement from {@code index} on is a daily heart value, never a sample. */
     public static boolean onlyDailyHeartFrom(List<Measurement> measurements, int index) {
         if (measurements == null) return false;
