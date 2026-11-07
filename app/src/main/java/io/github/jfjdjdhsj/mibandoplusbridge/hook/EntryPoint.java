@@ -134,6 +134,7 @@ public final class EntryPoint extends XposedModule {
         if (HEALTH_PACKAGE.equals(load.packageName)) {
             probe("OHEALTH_PACKAGE_LOADED process=" + process);
             OHealthLoginDebug.install(load.loader);
+            OHealthTrackGuard.install(load.loader);
             if (load.context != null) {
                 installHealth(load.context, load.loader);
                 return;
@@ -215,7 +216,9 @@ public final class EntryPoint extends XposedModule {
     }
 
     private static void installHealth(Context context, ClassLoader loader) {
-        if (context == null || !healthInstalled.compareAndSet(false, true)) return;
+        if (context == null) return;
+        OHealthTrackGuard.observe(context);
+        if (!healthInstalled.compareAndSet(false, true)) return;
         probe("OHEALTH_HOOKS_BEGIN");
         try {
             OHealthWeatherHook.install(context, loader);
