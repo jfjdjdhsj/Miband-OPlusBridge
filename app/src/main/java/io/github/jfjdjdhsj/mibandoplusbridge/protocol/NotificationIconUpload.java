@@ -55,13 +55,15 @@ public final class NotificationIconUpload {
     /**
      * The band's start ack. Its {@code dataUpload} body is optional in practice: some firmware
      * answers with an empty command and expects the default 2048-byte chunks, so only an explicit
-     * error field or resume position aborts the upload.
+     * error field aborts the upload. A non-zero resume position is ignored on purpose: the watch
+     * reports one for icons it has never received (49118 bytes for a 123904-byte icon on the
+     * Redmi Watch 5), so honouring it would skip the head of the payload.
      */
     public static int acceptedChunk(XiaomiProto.Command ack, int wireLimit) {
         XiaomiProto.DataUploadAck reply = ack != null && ack.hasDataUpload()
                 && ack.getDataUpload().hasDataUploadAck()
                 ? ack.getDataUpload().getDataUploadAck() : null;
-        if (reply != null && (reply.getUnknown2() != 0 || reply.getResumePosition() != 0)) {
+        if (reply != null && reply.getUnknown2() != 0) {
             throw new IllegalArgumentException("ICON_UPLOAD_REJECTED");
         }
         int size = reply != null && reply.hasChunkSize() && reply.getChunkSize() > 0

@@ -451,7 +451,8 @@ public final class BandLiveService extends Service {
             var fitted = io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand.fitToPayload(command,
                     notificationPayloadLimit());
             io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context, "NOTIFY_OUT type=" + fitted.getType()
-                    + " subtype=" + fitted.getSubtype() + " bytes=" + fitted.getSerializedSize());
+                    + " subtype=" + fitted.getSubtype() + " bytes=" + fitted.getSerializedSize()
+                    + " pkg=" + notificationPackage(fitted));
             noteIconPackage(fitted);
             routeWatchCall(context, fitted);
             return queue.send(fitted);
@@ -494,7 +495,8 @@ public final class BandLiveService extends Service {
                     + " subtype=" + fitted.getSubtype() + " bytes=" + fitted.getSerializedSize()
                     + " limit=" + notificationPayloadLimit());
             io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(context, "NOTIFY_OUT type=" + fitted.getType()
-                    + " subtype=" + fitted.getSubtype() + " bytes=" + fitted.getSerializedSize());
+                    + " subtype=" + fitted.getSubtype() + " bytes=" + fitted.getSerializedSize()
+                    + " pkg=" + notificationPackage(fitted));
             noteIconPackage(fitted);
             routeWatchCall(context, fitted);
             return queue.send(fitted);
@@ -574,7 +576,8 @@ public final class BandLiveService extends Service {
             var fitted = io.github.jfjdjdhsj.mibandoplusbridge.protocol.BandNotificationCommand.fitToPayload(
                     command, notificationPayloadLimit());
             io.github.jfjdjdhsj.mibandoplusbridge.data.SessionLog.line(this, "NOTIFY_OUT type=" + fitted.getType()
-                    + " subtype=" + fitted.getSubtype() + " bytes=" + fitted.getSerializedSize());
+                    + " subtype=" + fitted.getSubtype() + " bytes=" + fitted.getSerializedSize()
+                    + " pkg=" + notificationPackage(fitted));
             noteIconPackage(fitted);
             routeWatchCall(this, fitted);
             queue.send(fitted).whenComplete((ignored, error) -> {
@@ -1630,6 +1633,15 @@ public final class BandLiveService extends Service {
             noticeTitle = title;
             bondRepairShown = offered;
         }
+    }
+
+    /** The package an outgoing post names, so the log says whose icon the band will ask for. */
+    private static String notificationPackage(
+            nodomain.freeyourgadget.gadgetbridge.proto.xiaomi.XiaomiProto.Command command) {
+        if (!command.hasNotification() || !command.getNotification().hasNotification2()
+                || !command.getNotification().getNotification2().hasNotification3()) return "none";
+        String pkg = command.getNotification().getNotification2().getNotification3().getPackage();
+        return pkg == null || pkg.isBlank() ? "none" : pkg;
     }
 
     private static void noteIconPackage(nodomain.freeyourgadget.gadgetbridge.proto.xiaomi.XiaomiProto.Command command) {

@@ -65,4 +65,12 @@ public final class NotificationIconUploadTest {
         assertEquals(NotificationIconUpload.DEFAULT_CHUNK,
                 NotificationIconUpload.acceptedChunk(ack, 0));
     }
+
+    @Test public void nonZeroResumeStillUploadsTheWholeIcon() {
+        XiaomiProto.Command ack = XiaomiProto.Command.newBuilder().setType(22).setSubtype(0)
+                .setDataUpload(XiaomiProto.DataUpload.newBuilder().setDataUploadAck(
+                        XiaomiProto.DataUploadAck.newBuilder().setResumePosition(49118).setChunkSize(16384)))
+                .build();
+        assertEquals(16384, NotificationIconUpload.acceptedChunk(ack, 0));
+    }
 }
